@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+converter/cache/
+firmware_upstream/
+.pytest_cache/
+*.egg-info/
+sdcard_test/
+docs/
+*.uf2
+.claude/
+
