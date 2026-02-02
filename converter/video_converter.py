@@ -2,10 +2,10 @@
 ffmpeg wrapper for converting video files to TinyTV 2 compatible format.
 
 Target format:
-- Resolution: 216x135
+- Resolution: 210x135 (exact TinyTV 2 video viewport)
 - Video codec: MJPEG
 - Audio codec: PCM unsigned 8-bit
-- Audio sample rate: 16000 Hz mono
+- Audio sample rate: 11025 Hz mono
 - Container: AVI
 """
 
@@ -26,11 +26,11 @@ EPISODE_PATTERNS = [
     re.compile(r"(\d{1,2})(\d{2})\b"),              # 101 (season 1, episode 01)
 ]
 
-TARGET_WIDTH = 216
+TARGET_WIDTH = 210
 TARGET_HEIGHT = 135
-DEFAULT_FPS = 24
+DEFAULT_FPS = 18
 DEFAULT_QUALITY = 5  # MJPEG quality (lower = better, 2-10)
-AUDIO_SAMPLE_RATE = 16000
+AUDIO_SAMPLE_RATE = 11025
 
 
 @dataclass

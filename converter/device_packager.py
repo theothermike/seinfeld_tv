@@ -128,9 +128,11 @@ def package_show(
         for s in seasons_to_process
     )
 
-    # Create show subdirectory using sanitized name
+    # Create show subdirectory under /TV/ using sanitized name
     show_dir_name = sanitize_show_name(show_data.name)
-    show_dir = output_dir / show_dir_name
+    tv_dir = output_dir / "TV"
+    tv_dir.mkdir(parents=True, exist_ok=True)
+    show_dir = tv_dir / show_dir_name
     show_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Show directory: %s", show_dir_name)
 
@@ -248,9 +250,11 @@ def package_show(
 def _write_settings(path: Path, show_dir_name: str = "") -> None:
     """Write default settings.txt for firmware state persistence."""
     path.write_text(
-        "# SeinfeldTV Settings\n"
+        "# TinyJukebox Settings\n"
         f"last_show={show_dir_name}\n"
         "last_season=1\n"
         "last_episode=1\n"
         "volume=5\n"
+        "slideshow_interval=5\n"
+        "media_type=0\n"
     )

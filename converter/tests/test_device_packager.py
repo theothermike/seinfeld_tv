@@ -108,6 +108,8 @@ class TestWriteSettings:
         assert "last_season=1" in content
         assert "last_episode=1" in content
         assert "volume=5" in content
+        assert "slideshow_interval=5" in content
+        assert "media_type=0" in content
 
     def test_default_empty_show_name(self, tmp_path):
         path = tmp_path / "settings.txt"
@@ -138,8 +140,8 @@ class TestPackageShow:
 
         assert result is True
 
-        # Show files now live under output_dir/Seinfeld/
-        show_dir = output_dir / "Seinfeld"
+        # Show files now live under output_dir/TV/Seinfeld/
+        show_dir = output_dir / "TV" / "Seinfeld"
 
         # Verify show.sdb in show subdirectory
         show_meta = read_show_metadata(show_dir / "show.sdb")
@@ -212,7 +214,7 @@ class TestPackageShow:
 
         assert result is True
 
-        show_dir = output_dir / "Seinfeld"
+        show_dir = output_dir / "TV" / "Seinfeld"
         show_meta = read_show_metadata(show_dir / "show.sdb")
         assert show_meta.season_count == 1
         assert show_meta.total_episodes == 2
@@ -287,17 +289,17 @@ class TestPackageShow:
         fetcher_instance.fetch_show.return_value = friends_data
         package_show(input_dir=input2, output_dir=output, show_name="Friends")
 
-        # Both show directories should exist
-        assert (output / "Seinfeld" / "show.sdb").exists()
-        assert (output / "Friends" / "show.sdb").exists()
+        # Both show directories should exist under TV/
+        assert (output / "TV" / "Seinfeld" / "show.sdb").exists()
+        assert (output / "TV" / "Friends" / "show.sdb").exists()
 
         # Settings should not have been overwritten (first show wins)
         settings_content = (output / "settings.txt").read_text()
         assert "last_show=Seinfeld" in settings_content
 
         # Verify both shows' metadata
-        seinfeld_meta = read_show_metadata(output / "Seinfeld" / "show.sdb")
+        seinfeld_meta = read_show_metadata(output / "TV" / "Seinfeld" / "show.sdb")
         assert seinfeld_meta.name == "Seinfeld"
 
-        friends_meta = read_show_metadata(output / "Friends" / "show.sdb")
+        friends_meta = read_show_metadata(output / "TV" / "Friends" / "show.sdb")
         assert friends_meta.name == "Friends"

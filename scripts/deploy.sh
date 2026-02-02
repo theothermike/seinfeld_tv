@@ -61,16 +61,20 @@ fi
 # Step 3: Sync files
 if [[ -n "$SHOW_ONLY" ]]; then
     echo "=== Deploying show: $SHOW_ONLY ==="
-    if [[ ! -d "$SOURCE_DIR/$SHOW_ONLY" ]]; then
-        echo "Error: Show directory not found: $SOURCE_DIR/$SHOW_ONLY"
+    # Check under TV/ directory (new layout)
+    if [[ -d "$SOURCE_DIR/TV/$SHOW_ONLY" ]]; then
+        rsync -av --progress "$SOURCE_DIR/TV/$SHOW_ONLY/" "$DEVICE_MOUNT/TV/$SHOW_ONLY/"
+    elif [[ -d "$SOURCE_DIR/$SHOW_ONLY" ]]; then
+        rsync -av --progress "$SOURCE_DIR/$SHOW_ONLY/" "$DEVICE_MOUNT/$SHOW_ONLY/"
+    else
+        echo "Error: Show directory not found: $SOURCE_DIR/TV/$SHOW_ONLY"
         exit 1
     fi
-    rsync -av --progress "$SOURCE_DIR/$SHOW_ONLY/" "$DEVICE_MOUNT/$SHOW_ONLY/"
     # Also sync settings and boot.avi if they exist
     [[ -f "$SOURCE_DIR/settings.txt" ]] && cp -v "$SOURCE_DIR/settings.txt" "$DEVICE_MOUNT/"
     [[ -f "$SOURCE_DIR/boot.avi" ]] && rsync -av --progress "$SOURCE_DIR/boot.avi" "$DEVICE_MOUNT/"
 else
-    echo "=== Deploying all files to TinyTV ==="
+    echo "=== Deploying all files to TinyJukebox ==="
     rsync -av --progress --delete "$SOURCE_DIR/" "$DEVICE_MOUNT/"
 fi
 

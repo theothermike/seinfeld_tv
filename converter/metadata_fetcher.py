@@ -283,6 +283,48 @@ class MetadataFetcher:
         logger.info("Fetched %d TMDB images for %s", len(images), show_name)
         return images
 
+    def fetch_movie(self, title: str) -> Optional[dict]:
+        """
+        Search TMDB for a movie and return metadata.
+
+        Returns dict with keys: title, year, runtime_minutes, description, poster_url
+        Requires tmdb_key to be set.
+        """
+        if not self.tmdb_key:
+            logger.warning("No TMDB API key, returning minimal movie data")
+            return {"title": title, "year": "", "runtime_minutes": 0,
+                    "description": "", "poster_url": None}
+
+        url = f"{TMDB_BASE}/search/movie"
+        data = self._tmdb_get(url, {"query": title})
+        if not data or not data.get("results"):
+            logger.warning("Movie not found on TMDB: %s", title)
+            return {"title": title, "year": "", "runtime_minutes": 0,
+                    "description": "", "poster_url": None}
+
+        result = data["results"][0]
+        tmdb_id = result["id"]
+
+        # Get full movie details for runtime
+        detail_url = f"{TMDB_BASE}/movie/{tmdb_id}"
+        detail = self._tmdb_get(detail_url) or {}
+
+        release_date = result.get("release_date", "")
+        year = release_date[:4] if release_date else ""
+        overview = result.get("overview", "")
+        poster_path = result.get("poster_path")
+        poster_url = f"{TMDB_IMAGE_BASE}/w300{poster_path}" if poster_path else None
+        runtime = detail.get("runtime", 0) or 0
+
+        logger.info("Fetched movie: %s (%s) - %d min", result.get("title", title), year, runtime)
+        return {
+            "title": result.get("title", title),
+            "year": year,
+            "runtime_minutes": runtime,
+            "description": overview[:56] if overview else "",
+            "poster_url": poster_url,
+        }
+
     def download_image(self, url: str, output_path: Path) -> bool:
         """Download an image to a local path."""
         cache_key = f"img_{hashlib.md5(url.encode()).hexdigest()}"

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 #
-# convert.sh - Wrapper around the converter package for TinyTV 2
+# convert.sh - Wrapper around the TinyJukebox converter
 #
 # Usage:
-#   ./scripts/convert.sh --show "Seinfeld" --input ~/tv/Seinfeld/ [options]
+#   ./scripts/convert.sh --type tv --show "Seinfeld" --input ~/tv/Seinfeld/
+#   ./scripts/convert.sh --type movie --title "The Matrix" --input ~/movies/matrix.mkv
+#   ./scripts/convert.sh --type music-video --collection "80s Hits" --input ~/mv/80s/
+#   ./scripts/convert.sh --type music --artist "Pink Floyd" --input ~/music/pinkfloyd/
+#   ./scripts/convert.sh --type photo --album "Vacation" --input ~/photos/vacation/
 #
 set -euo pipefail
 
@@ -19,19 +23,44 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 
 # Parse our wrapper args, collect passthrough args
-INPUT_DIR=""
+INPUT=""
+MEDIA_TYPE="tv"
 SHOW=""
+TITLE=""
+COLLECTION=""
+ARTIST=""
+ALBUM=""
 PASSTHROUGH_ARGS=()
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --type)
+            MEDIA_TYPE="$2"
+            shift 2
+            ;;
         --input)
-            INPUT_DIR="$2"
+            INPUT="$2"
             shift 2
             ;;
         --show)
             SHOW="$2"
+            shift 2
+            ;;
+        --title)
+            TITLE="$2"
+            shift 2
+            ;;
+        --collection)
+            COLLECTION="$2"
+            shift 2
+            ;;
+        --artist)
+            ARTIST="$2"
+            shift 2
+            ;;
+        --album)
+            ALBUM="$2"
             shift 2
             ;;
         --output-dir)
@@ -45,25 +74,57 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$SHOW" ]]; then
-    echo "Error: --show is required"
-    echo "Usage: $0 --show \"Seinfeld\" --input ~/tv/Seinfeld/ [--season N] [--episodes 1-5] [--verbose]"
-    exit 1
-fi
-
-if [[ -z "$INPUT_DIR" ]]; then
+if [[ -z "$INPUT" ]]; then
     echo "Error: --input is required"
-    echo "Usage: $0 --show \"Seinfeld\" --input ~/tv/Seinfeld/ [--season N] [--episodes 1-5] [--verbose]"
+    echo ""
+    echo "Usage:"
+    echo "  $0 --type tv --show \"Seinfeld\" --input ~/tv/Seinfeld/"
+    echo "  $0 --type movie --title \"The Matrix\" --input ~/movies/matrix.mkv"
+    echo "  $0 --type music-video --collection \"80s\" --input ~/mv/80s/"
+    echo "  $0 --type music --artist \"Pink Floyd\" --input ~/music/pinkfloyd/"
+    echo "  $0 --type photo --album \"Vacation\" --input ~/photos/vacation/"
     exit 1
 fi
 
-echo "Converting show: $SHOW"
-echo "Input: $INPUT_DIR"
+# Build converter arguments based on type
+CONVERTER_ARGS=(--type "$MEDIA_TYPE" --output-dir "$OUTPUT_DIR")
+
+case "$MEDIA_TYPE" in
+    tv)
+        [[ -z "$SHOW" ]] && { echo "Error: --show required for TV"; exit 1; }
+        CONVERTER_ARGS+=(--input-dir "$INPUT" --show "$SHOW")
+        echo "Converting TV show: $SHOW"
+        ;;
+    movie)
+        [[ -z "$TITLE" ]] && { echo "Error: --title required for movie"; exit 1; }
+        CONVERTER_ARGS+=(--input-file "$INPUT" --title "$TITLE")
+        echo "Converting movie: $TITLE"
+        ;;
+    music-video)
+        [[ -z "$COLLECTION" ]] && { echo "Error: --collection required for music-video"; exit 1; }
+        CONVERTER_ARGS+=(--input-dir "$INPUT" --collection "$COLLECTION")
+        echo "Converting music video collection: $COLLECTION"
+        ;;
+    music)
+        [[ -z "$ARTIST" ]] && { echo "Error: --artist required for music"; exit 1; }
+        CONVERTER_ARGS+=(--input-dir "$INPUT" --artist "$ARTIST")
+        echo "Converting music: $ARTIST"
+        ;;
+    photo)
+        [[ -z "$ALBUM" ]] && { echo "Error: --album required for photo"; exit 1; }
+        CONVERTER_ARGS+=(--input-dir "$INPUT" --album "$ALBUM")
+        echo "Converting photo album: $ALBUM"
+        ;;
+    *)
+        echo "Error: Unknown type '$MEDIA_TYPE'"
+        exit 1
+        ;;
+esac
+
+echo "Input: $INPUT"
 echo "Output: $OUTPUT_DIR"
 echo ""
 
 exec "$PYTHON" -m converter \
-    --show "$SHOW" \
-    --input-dir "$INPUT_DIR" \
-    --output-dir "$OUTPUT_DIR" \
+    "${CONVERTER_ARGS[@]}" \
     "${PASSTHROUGH_ARGS[@]}"
