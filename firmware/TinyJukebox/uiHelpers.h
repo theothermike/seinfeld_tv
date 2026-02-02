@@ -71,6 +71,25 @@ static inline int textWidth(const char* text) {
   return strlen(text) * 8;
 }
 
+// ─── Icon Drawing ───────────────────────────────────────────────────────────
+// Draw a PROGMEM RGB565 icon to frameBuf. Black (0x0000) pixels are transparent.
+
+static inline void drawIcon(const uint16_t* iconData, int x, int y, int w, int h) {
+  extern uint16_t frameBuf[];
+  for (int row = 0; row < h; row++) {
+    int fy = y + row;
+    if (fy < 0 || fy >= VIDEO_H) continue;
+    for (int col = 0; col < w; col++) {
+      int fx = x + col;
+      if (fx < 0 || fx >= VIDEO_W) continue;
+      uint16_t pixel = pgm_read_word(&iconData[row * w + col]);
+      if (pixel != 0x0000) {
+        frameBuf[fy * VIDEO_W + fx] = pixel;
+      }
+    }
+  }
+}
+
 // ─── Scrolling Text Support ─────────────────────────────────────────────────
 // ScrollSlot and ScrollState structs are defined in appState.h.
 // resetScrollState() and updateScrollState() are defined in TinyJukebox.ino

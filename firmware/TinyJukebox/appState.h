@@ -265,6 +265,7 @@ struct AppContext {
   // Media type selection
   MediaType currentMediaType;
   bool      mediaTypeAvailable[MEDIA_TYPE_COUNT];
+  int       mediaTypeItemCount[MEDIA_TYPE_COUNT];  // cached subdir counts per type
   int       mediaSelectorIndex;
   int       mediaSelectorCount;
 

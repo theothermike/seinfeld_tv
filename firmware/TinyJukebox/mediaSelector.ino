@@ -1,13 +1,14 @@
 //-------------------------------------------------------------------------------
-//  TinyJukebox - Media Type Selector
+//  TinyJukebox - Media Type Selector (Icon Browser)
 //
 //  Scans the SD card for available media type directories (TV, Movies,
-//  MusicVideos, Music, Photos) and presents a menu for the user to choose.
-//  Also provides a Settings entry at the end of the list.
-//  Vol knob navigates, CH forward selects, power button powers off.
+//  MusicVideos, Music, Photos, YouTube) and presents a single-item-at-a-time
+//  browser with centered icons and media type names.
+//  Vol knob navigates left/right, CH forward selects, power button powers off.
 //-------------------------------------------------------------------------------
 
 #include "uiHelpers.h"
+#include "mediaIcons.h"
 
 extern uint16_t frameBuf[];
 extern GraphicsBuffer2 screenBuffer;
@@ -23,43 +24,53 @@ static const char* mediaTypeLabels[] = {
   "YouTube"
 };
 
+// Singular/plural count labels for each media type
+static const char* mediaTypeUnits[][2] = {
+  { "show",       "shows" },
+  { "movie",      "movies" },
+  { "collection", "collections" },
+  { "artist",     "artists" },
+  { "album",      "albums" },
+  { "playlist",   "playlists" }
+};
+
 // Settings is an extra entry beyond the media types
 #define SELECTOR_ENTRY_SETTINGS  MEDIA_TYPE_COUNT
 
 // ─── Scan Media Types ───────────────────────────────────────────────────────
 // Check which top-level media directories exist and have content.
+// Also counts subdirectories for each available type.
 
 void scanMediaTypes() {
   appCtx.mediaSelectorCount = 0;
 
-  // Check each media type directory
   const char* mediaDirs[] = { TV_DIR, MOVIES_DIR, MUSIC_VIDEOS_DIR, MUSIC_DIR, PHOTOS_DIR, YOUTUBE_DIR };
 
   for (int i = 0; i < MEDIA_TYPE_COUNT; i++) {
     appCtx.mediaTypeAvailable[i] = false;
+    appCtx.mediaTypeItemCount[i] = 0;
 
     File32 dir;
     if (!dir.open(mediaDirs[i], O_RDONLY)) {
       continue;
     }
 
-    // Check if directory has at least one subdirectory or relevant file
+    // Count all subdirectories
     File32 entry;
-    bool hasContent = false;
+    int count = 0;
     while (entry.openNext(&dir, O_RDONLY)) {
       if (entry.isDir()) {
-        hasContent = true;
-        entry.close();
-        break;
+        count++;
       }
       entry.close();
     }
     dir.close();
 
-    if (hasContent) {
+    if (count > 0) {
       appCtx.mediaTypeAvailable[i] = true;
+      appCtx.mediaTypeItemCount[i] = count;
       appCtx.mediaSelectorCount++;
-      dbgPrint("Media type available: " + String(mediaTypeLabels[i]));
+      dbgPrint("Media type available: " + String(mediaTypeLabels[i]) + " (" + String(count) + ")");
     }
   }
 
@@ -67,16 +78,53 @@ void scanMediaTypes() {
   dbgPrint("Total media types: " + String(appCtx.mediaSelectorCount));
 }
 
+// ─── Helper: Map display index to MediaType or Settings ─────────────────────
+// Returns the MediaType enum value for the given display index, or
+// MEDIA_TYPE_COUNT if it maps to Settings.
+
+static int displayIndexToMediaType(int displayIdx) {
+  int idx = 0;
+  for (int i = 0; i < MEDIA_TYPE_COUNT; i++) {
+    if (!appCtx.mediaTypeAvailable[i]) continue;
+    if (idx == displayIdx) return i;
+    idx++;
+  }
+  return MEDIA_TYPE_COUNT;  // Settings
+}
+
+// ─── Helper: Format item count string ───────────────────────────────────────
+
+static void getMediaTypeInfoString(char* buf, int bufLen, int mediaType) {
+  if (mediaType >= MEDIA_TYPE_COUNT) {
+    // Settings has no count
+    snprintf(buf, bufLen, "");
+    return;
+  }
+  int count = appCtx.mediaTypeItemCount[mediaType];
+  const char* unit = (count == 1) ? mediaTypeUnits[mediaType][0] : mediaTypeUnits[mediaType][1];
+  snprintf(buf, bufLen, "%d %s", count, unit);
+}
+
 // ─── Draw Media Selector ────────────────────────────────────────────────────
 //
 // Layout (210x135):
 //   Row 0-14:   "TinyJukebox" header (yellow, centered)
-//   Row 16:     Divider
-//   Row 20+:    List of available media types (highlighted current)
-//   Row 122:    Hint text
+//   Row 18:     Divider line
+//   Row 20-86:  48x48 icon centered in this area
+//               "<" arrow at x=4, ">" arrow at x=198
+//   Row 92:     Media type name (yellow, centered)
+//   Row 106:    Item count e.g. "3 shows" (gray)
+//   Row 122:    "VOL:nav  CH:select" hint (dark gray)
 
 void drawMediaSelector() {
   clearFrameBuf();
+
+  // Count total entries for navigation bounds
+  int totalEntries = appCtx.mediaSelectorCount + 1;  // +1 for Settings
+
+  // Clamp selector index
+  if (appCtx.mediaSelectorIndex < 0) appCtx.mediaSelectorIndex = 0;
+  if (appCtx.mediaSelectorIndex >= totalEntries) appCtx.mediaSelectorIndex = totalEntries - 1;
 
   // Header
   const char* header = "TinyJukebox";
@@ -86,68 +134,45 @@ void drawMediaSelector() {
   // Divider
   drawHLine(10, 18, VIDEO_W - 20, COL_GRAY_DK);
 
-  // Build list of visible entries: available media types + settings
-  // We track a mapping from display index -> entry type
-  int displayIndex = 0;
-  int selectorY = 24;
-  int rowHeight = 16;
+  // Determine which media type (or settings) is selected
+  int mediaType = displayIndexToMediaType(appCtx.mediaSelectorIndex);
 
-  // Count total entries for navigation bounds
-  int totalEntries = appCtx.mediaSelectorCount + 1;  // +1 for Settings
+  // Draw icon centered in the thumbnail area (rows 20-86)
+  int iconAreaY = 20;
+  int iconAreaH = 66;
+  int iconX = (VIDEO_W - ICON_W) / 2;
+  int iconY = iconAreaY + (iconAreaH - ICON_H) / 2;
 
-  // Clamp selector index
-  if (appCtx.mediaSelectorIndex < 0) appCtx.mediaSelectorIndex = 0;
-  if (appCtx.mediaSelectorIndex >= totalEntries) appCtx.mediaSelectorIndex = totalEntries - 1;
+  // Select icon from lookup table (mediaType index, or MEDIA_TYPE_COUNT for settings)
+  int iconIdx = (mediaType < MEDIA_TYPE_COUNT) ? mediaType : MEDIA_TYPE_COUNT;
+  const uint16_t* iconPtr = (const uint16_t*)pgm_read_ptr(&mediaIcons[iconIdx]);
+  drawIcon(iconPtr, iconX, iconY, ICON_W, ICON_H);
 
-  // Calculate scroll offset so selected item is visible
-  // We can show about 6 items on screen
-  int maxVisible = 6;
-  int scrollOffset = 0;
-  if (appCtx.mediaSelectorIndex >= maxVisible) {
-    scrollOffset = appCtx.mediaSelectorIndex - maxVisible + 1;
+  // Navigation arrows
+  int arrowY = iconAreaY + iconAreaH / 2 - 6;
+  if (appCtx.mediaSelectorIndex > 0) {
+    drawText("<", 4, arrowY, COL_GRAY_MED);
+  }
+  if (appCtx.mediaSelectorIndex < totalEntries - 1) {
+    drawText(">", VIDEO_W - 12, arrowY, COL_GRAY_MED);
   }
 
-  // Draw each available media type
-  displayIndex = 0;
-  for (int i = 0; i < MEDIA_TYPE_COUNT; i++) {
-    if (!appCtx.mediaTypeAvailable[i]) continue;
-
-    int visIndex = displayIndex - scrollOffset;
-    if (visIndex >= 0 && visIndex < maxVisible) {
-      int y = selectorY + visIndex * rowHeight;
-      bool selected = (displayIndex == appCtx.mediaSelectorIndex);
-
-      if (selected) {
-        // Highlight bar
-        fillRect(4, y - 1, VIDEO_W - 8, rowHeight, COL_GRAY_DK);
-      }
-
-      // Draw label
-      const char* label = mediaTypeLabels[i];
-      int labelW = textWidth(label);
-      int labelX = (VIDEO_W - labelW) / 2;
-      drawText(label, labelX, y + 1, selected ? COL_YELLOW : COL_WHITE);
-    }
-
-    displayIndex++;
+  // Media type name (yellow, centered)
+  const char* label;
+  if (mediaType < MEDIA_TYPE_COUNT) {
+    label = mediaTypeLabels[mediaType];
+  } else {
+    label = "Settings";
   }
+  int labelW = textWidth(label);
+  drawText(label, (VIDEO_W - labelW) / 2, 92, COL_YELLOW);
 
-  // Settings entry
-  {
-    int visIndex = displayIndex - scrollOffset;
-    if (visIndex >= 0 && visIndex < maxVisible) {
-      int y = selectorY + visIndex * rowHeight;
-      bool selected = (displayIndex == appCtx.mediaSelectorIndex);
-
-      if (selected) {
-        fillRect(4, y - 1, VIDEO_W - 8, rowHeight, COL_GRAY_DK);
-      }
-
-      const char* label = "Settings";
-      int labelW = textWidth(label);
-      int labelX = (VIDEO_W - labelW) / 2;
-      drawText(label, labelX, y + 1, selected ? COL_YELLOW : COL_GRAY_LT);
-    }
+  // Item count info line (gray, centered)
+  char infoStr[32];
+  getMediaTypeInfoString(infoStr, sizeof(infoStr), mediaType);
+  if (infoStr[0] != '\0') {
+    int infoW = textWidth(infoStr);
+    drawText(infoStr, (VIDEO_W - infoW) / 2, 106, COL_GRAY_MED);
   }
 
   // Hint text
@@ -174,6 +199,7 @@ void handleMediaSelectorInput() {
     raw.irVolUp = false;
     if (appCtx.mediaSelectorIndex < totalEntries - 1) {
       appCtx.mediaSelectorIndex++;
+      resetScrollState(&appCtx.scrollState);
       drawMediaSelector();
     }
   }
@@ -182,6 +208,7 @@ void handleMediaSelectorInput() {
     raw.irVolDn = false;
     if (appCtx.mediaSelectorIndex > 0) {
       appCtx.mediaSelectorIndex--;
+      resetScrollState(&appCtx.scrollState);
       drawMediaSelector();
     }
   }
@@ -191,33 +218,26 @@ void handleMediaSelectorInput() {
     raw.encoderCW = false;
     raw.irChannelUp = false;
 
-    // Map display index back to media type or settings
-    int displayIndex = 0;
-    for (int i = 0; i < MEDIA_TYPE_COUNT; i++) {
-      if (!appCtx.mediaTypeAvailable[i]) continue;
-      if (displayIndex == appCtx.mediaSelectorIndex) {
-        // Selected a media type
-        appCtx.currentMediaType = (MediaType)i;
-        AppState target = getFirstStateForMediaType(appCtx.currentMediaType);
-        appCtx.nextState = target;
-        appCtx.currentState = STATE_TRANSITION;
-        appCtx.transitionStart = millis();
-        appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
-        dbgPrint("Selected media type: " + String(mediaTypeLabels[i]));
-        return;
-      }
-      displayIndex++;
-    }
+    int mediaType = displayIndexToMediaType(appCtx.mediaSelectorIndex);
 
-    // If we got here, user selected Settings
-    if (displayIndex == appCtx.mediaSelectorIndex) {
+    if (mediaType < MEDIA_TYPE_COUNT) {
+      // Selected a media type
+      appCtx.currentMediaType = (MediaType)mediaType;
+      AppState target = getFirstStateForMediaType(appCtx.currentMediaType);
+      appCtx.nextState = target;
+      appCtx.currentState = STATE_TRANSITION;
+      appCtx.transitionStart = millis();
+      appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
+      dbgPrint("Selected media type: " + String(mediaTypeLabels[mediaType]));
+    } else {
+      // Settings
       appCtx.nextState = STATE_SETTINGS;
       appCtx.currentState = STATE_TRANSITION;
       appCtx.transitionStart = millis();
       appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
       dbgPrint("Selected Settings");
-      return;
     }
+    return;
   }
 
   // Consume channel back (no-op at media selector level)
