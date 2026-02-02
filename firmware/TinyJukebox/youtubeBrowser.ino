@@ -1,10 +1,10 @@
 //-------------------------------------------------------------------------------
-//  TinyJukebox - Music Video Browser
+//  TinyJukebox - YouTube Browser
 //
-//  Two-level browser: Collection -> Video list.
-//  Scans /MusicVideos/ for collection directories containing collection.sdb.
-//  Each collection has V##.avi / V##.sdb video files.
-//  Supports auto-advance through videos in a collection.
+//  Two-level browser: Playlist -> Video list.
+//  Scans /YouTube/ for playlist directories containing playlist.sdb.
+//  Each playlist has Y##.avi / Y##.sdb video files.
+//  Supports auto-advance through videos in a playlist.
 //  Vol knob navigates, CH forward selects/plays, CH back goes up a level.
 //-------------------------------------------------------------------------------
 
@@ -13,15 +13,15 @@
 extern uint16_t frameBuf[];
 extern GraphicsBuffer2 screenBuffer;
 
-// ─── Collection Scanning ────────────────────────────────────────────────────
-// Scan /MusicVideos/ for subdirectories containing collection.sdb.
+// ─── Playlist Scanning ─────────────────────────────────────────────────────
+// Scan /YouTube/ for subdirectories containing playlist.sdb.
 
-void scanMVCollections() {
+void scanYouTubePlaylists() {
   appCtx.availableItemCount = 0;
 
   File32 root;
-  if (!root.open(MUSIC_VIDEOS_DIR, O_RDONLY)) {
-    dbgPrint("Failed to open " MUSIC_VIDEOS_DIR);
+  if (!root.open(YOUTUBE_DIR, O_RDONLY)) {
+    dbgPrint("Failed to open " YOUTUBE_DIR);
     return;
   }
 
@@ -39,7 +39,7 @@ void scanMVCollections() {
     if (dirName[0] == '.' || dirName[0] == '_') continue;
 
     char sdbPath[64];
-    snprintf(sdbPath, sizeof(sdbPath), "%s/%s/collection.sdb", MUSIC_VIDEOS_DIR, dirName);
+    snprintf(sdbPath, sizeof(sdbPath), "%s/%s/playlist.sdb", YOUTUBE_DIR, dirName);
     File32 sdbCheck;
     if (sdbCheck.open(sdbPath, O_RDONLY)) {
       sdbCheck.close();
@@ -47,7 +47,7 @@ void scanMVCollections() {
         strncpy(appCtx.availableItems[appCtx.availableItemCount], dirName, ITEM_DIR_LEN - 1);
         appCtx.availableItems[appCtx.availableItemCount][ITEM_DIR_LEN - 1] = '\0';
         appCtx.availableItemCount++;
-        dbgPrint("Found MV collection: " + String(dirName));
+        dbgPrint("Found YouTube playlist: " + String(dirName));
       }
     }
   }
@@ -69,17 +69,17 @@ void scanMVCollections() {
   if (appCtx.availableItemCount > 0) {
     strncpy(appCtx.currentItemDir, appCtx.availableItems[0], ITEM_DIR_LEN - 1);
     appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
-    loadCollectionMetadata();
+    loadYouTubePlaylistMetadata();
   }
 
-  dbgPrint("MV collections found: " + String(appCtx.availableItemCount));
+  dbgPrint("YouTube playlists found: " + String(appCtx.availableItemCount));
 }
 
 // ─── Metadata Loading ───────────────────────────────────────────────────────
 
-bool loadCollectionMetadata() {
+bool loadYouTubePlaylistMetadata() {
   char path[64];
-  snprintf(path, sizeof(path), "%s/%s/collection.sdb", MUSIC_VIDEOS_DIR, appCtx.currentItemDir);
+  snprintf(path, sizeof(path), "%s/%s/playlist.sdb", YOUTUBE_DIR, appCtx.currentItemDir);
 
   File32 f;
   if (!f.open(path, O_RDONLY)) {
@@ -88,33 +88,33 @@ bool loadCollectionMetadata() {
     return false;
   }
 
-  if (f.fileSize() != sizeof(CollectionMetadata)) {
-    dbgPrint("collection.sdb wrong size: " + String(f.fileSize()));
+  if (f.fileSize() != sizeof(YouTubePlaylistMetadata)) {
+    dbgPrint("playlist.sdb wrong size: " + String(f.fileSize()));
     f.close();
     appCtx.metadataLoaded = false;
     return false;
   }
 
-  f.read(&appCtx.meta1.collectionMeta, sizeof(CollectionMetadata));
+  f.read(&appCtx.meta1.youtubePlaylistMeta, sizeof(YouTubePlaylistMetadata));
   f.close();
 
-  if (strncmp(appCtx.meta1.collectionMeta.magic, COLLECTION_MAGIC, 4) != 0) {
-    dbgPrint("collection.sdb bad magic");
+  if (strncmp(appCtx.meta1.youtubePlaylistMeta.magic, YOUTUBE_PLAYLIST_MAGIC, 4) != 0) {
+    dbgPrint("playlist.sdb bad magic");
     appCtx.metadataLoaded = false;
     return false;
   }
 
   appCtx.metadataLoaded = true;
-  appCtx.subItemCount = appCtx.meta1.collectionMeta.videoCount;
-  dbgPrint("Loaded collection: " + String(appCtx.meta1.collectionMeta.name) +
+  appCtx.subItemCount = appCtx.meta1.youtubePlaylistMeta.videoCount;
+  dbgPrint("Loaded YouTube playlist: " + String(appCtx.meta1.youtubePlaylistMeta.name) +
            " (" + String(appCtx.subItemCount) + " videos)");
   return true;
 }
 
-bool loadVideoMetadata(int videoNum) {
+bool loadYouTubeVideoMetadata(int videoNum) {
   char path[64];
-  snprintf(path, sizeof(path), "%s/%s/V%02d.sdb",
-           MUSIC_VIDEOS_DIR, appCtx.currentItemDir, videoNum);
+  snprintf(path, sizeof(path), "%s/%s/Y%02d.sdb",
+           YOUTUBE_DIR, appCtx.currentItemDir, videoNum);
 
   File32 f;
   if (!f.open(path, O_RDONLY)) {
@@ -123,43 +123,43 @@ bool loadVideoMetadata(int videoNum) {
     return false;
   }
 
-  if (f.fileSize() != sizeof(VideoMetadata)) {
-    dbgPrint("V##.sdb wrong size: " + String(f.fileSize()));
+  if (f.fileSize() != sizeof(YouTubeVideoMetadata)) {
+    dbgPrint("Y##.sdb wrong size: " + String(f.fileSize()));
     f.close();
     appCtx.episodeMetaLoaded = false;
     return false;
   }
 
-  f.read(&appCtx.meta3.videoMeta, sizeof(VideoMetadata));
+  f.read(&appCtx.meta3.youtubeVideoMeta, sizeof(YouTubeVideoMetadata));
   f.close();
 
-  if (strncmp(appCtx.meta3.videoMeta.magic, VIDEO_MAGIC, 4) != 0) {
-    dbgPrint("V##.sdb bad magic");
+  if (strncmp(appCtx.meta3.youtubeVideoMeta.magic, YOUTUBE_VIDEO_MAGIC, 4) != 0) {
+    dbgPrint("Y##.sdb bad magic");
     appCtx.episodeMetaLoaded = false;
     return false;
   }
 
   appCtx.episodeMetaLoaded = true;
-  dbgPrint("Loaded video V" + String(videoNum) + ": " +
-           String(appCtx.meta3.videoMeta.title));
+  dbgPrint("Loaded YouTube video Y" + String(videoNum) + ": " +
+           String(appCtx.meta3.youtubeVideoMeta.title));
   return true;
 }
 
-// ─── Draw Collection Browser ────────────────────────────────────────────────
+// ─── Draw Playlist Browser ─────────────────────────────────────────────────
 //
 // Layout (210x135):
-//   Row 0-14:   "Music Videos" header (white, centered)
+//   Row 0-14:   "YouTube" header (white, centered)
 //   Row 16:     Divider
 //   Row 20-86:  Thumbnail (108x67) centered
-//   Row 90:     Collection name (yellow, centered)
-//   Row 106:    Year + video count (gray)
+//   Row 90:     Playlist name (yellow, centered)
+//   Row 106:    Uploader + video count (gray)
 //   Row 122:    Hint text
 
-void drawMVCollectionBrowser() {
+void drawYouTubePlaylistBrowser() {
   clearFrameBuf();
 
   // Header
-  const char* header = "Music Videos";
+  const char* header = "YouTube";
   int headerW = textWidth(header);
   drawText(header, (VIDEO_W - headerW) / 2, 4, COL_WHITE);
 
@@ -170,8 +170,8 @@ void drawMVCollectionBrowser() {
   int thumbX = (VIDEO_W - THUMB_W) / 2;
   int thumbY = 20;
   char thumbPath[64];
-  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/collection.raw",
-           MUSIC_VIDEOS_DIR, appCtx.availableItems[appCtx.itemNavIndex]);
+  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/playlist.raw",
+           YOUTUBE_DIR, appCtx.availableItems[appCtx.itemNavIndex]);
   if (!displayThumbnail(thumbPath, thumbX, thumbY)) {
     fillRect(thumbX, thumbY, THUMB_W, THUMB_H, COL_GRAY_DK);
   }
@@ -184,17 +184,17 @@ void drawMVCollectionBrowser() {
     drawText(">", VIDEO_W - 12, thumbY + THUMB_H / 2 - 6, COL_GRAY_MED);
   }
 
-  // Collection name (scrolls if too long)
+  // Playlist name (scrolls if too long)
   if (appCtx.metadataLoaded) {
-    const char* name = appCtx.meta1.collectionMeta.name;
+    const char* name = appCtx.meta1.youtubePlaylistMeta.name;
     drawScrollText(name, 2, 92, VIDEO_W - 4, COL_YELLOW,
                    &appCtx.scrollState.slots[0]);
 
-    // Year + video count
+    // Uploader + video count
     char infoStr[48];
     snprintf(infoStr, sizeof(infoStr), "%s - %d videos",
-             appCtx.meta1.collectionMeta.year,
-             appCtx.meta1.collectionMeta.videoCount);
+             appCtx.meta1.youtubePlaylistMeta.uploader,
+             appCtx.meta1.youtubePlaylistMeta.videoCount);
     int infoW = textWidth(infoStr);
     drawText(infoStr, (VIDEO_W - infoW) / 2, 106, COL_GRAY_MED);
   } else {
@@ -212,19 +212,19 @@ void drawMVCollectionBrowser() {
 // ─── Draw Video Browser ─────────────────────────────────────────────────────
 //
 // Layout (210x135):
-//   Row 0-10:   Collection name (gray, left)
+//   Row 0-10:   Playlist name (gray, left)
 //   Row 12:     Divider
 //   Row 14-80:  Thumbnail left + video info right
 //   Row 88:     Divider
 //   Row 93:     Hint text
 //   Row 108+:   Description
 
-void drawMVVideoBrowser() {
+void drawYouTubeVideoBrowser() {
   clearFrameBuf();
 
-  // Collection label
+  // Playlist label
   if (appCtx.metadataLoaded) {
-    drawText(appCtx.meta1.collectionMeta.name, 4, 4, COL_GRAY_MED);
+    drawText(appCtx.meta1.youtubePlaylistMeta.name, 4, 4, COL_GRAY_MED);
   }
 
   // Divider
@@ -242,21 +242,21 @@ void drawMVVideoBrowser() {
 
   // Video title (scrolls if too long)
   if (appCtx.episodeMetaLoaded) {
-    drawScrollText(appCtx.meta3.videoMeta.title, infoX, 38,
+    drawScrollText(appCtx.meta3.youtubeVideoMeta.title, infoX, 38,
                    VIDEO_W - infoX - 2, COL_YELLOW,
                    &appCtx.scrollState.slots[0]);
 
-    // Artist
-    if (appCtx.meta3.videoMeta.artist[0]) {
-      drawText(appCtx.meta3.videoMeta.artist, infoX, 54, COL_GRAY_LT);
+    // Uploader
+    if (appCtx.meta3.youtubeVideoMeta.uploader[0]) {
+      drawText(appCtx.meta3.youtubeVideoMeta.uploader, infoX, 54, COL_GRAY_LT);
     }
   }
 
   // Thumbnail (left side) - drawn AFTER text so it overwrites any
   // scrolling text bleed into the thumbnail region
   char thumbPath[64];
-  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/V%02d.raw",
-           MUSIC_VIDEOS_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
+  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/Y%02d.raw",
+           YOUTUBE_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
   if (!displayThumbnail(thumbPath, 2, 19)) {
     fillRect(2, 19, THUMB_W, THUMB_H, COL_GRAY_DK);
   }
@@ -265,8 +265,8 @@ void drawMVVideoBrowser() {
   drawHLine(2, 88, VIDEO_W - 4, COL_GRAY_DK);
 
   // Description (scrolls if too long)
-  if (appCtx.episodeMetaLoaded && appCtx.meta3.videoMeta.description[0]) {
-    drawScrollText(appCtx.meta3.videoMeta.description, 4, 93,
+  if (appCtx.episodeMetaLoaded && appCtx.meta3.youtubeVideoMeta.description[0]) {
+    drawScrollText(appCtx.meta3.youtubeVideoMeta.description, 4, 93,
                    VIDEO_W - 8, COL_GRAY_LT,
                    &appCtx.scrollState.slots[1]);
   }
@@ -277,12 +277,12 @@ void drawMVVideoBrowser() {
   writeToScreenDMA(frameBuf, VIDEO_W * VIDEO_H);
 }
 
-// ─── Collection Input Handling ──────────────────────────────────────────────
+// ─── Playlist Input Handling ────────────────────────────────────────────────
 
-void handleMVCollectionInput() {
+void handleYouTubePlaylistInput() {
   RawInputFlags& raw = appCtx.rawInput;
 
-  // Navigate collections
+  // Navigate playlists
   if (raw.encoder2CW || raw.irVolUp) {
     raw.encoder2CW = false;
     raw.irVolUp = false;
@@ -291,9 +291,9 @@ void handleMVCollectionInput() {
       strncpy(appCtx.currentItemDir, appCtx.availableItems[appCtx.itemNavIndex], ITEM_DIR_LEN - 1);
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
-      loadCollectionMetadata();
+      loadYouTubePlaylistMetadata();
       resetScrollState(&appCtx.scrollState);
-      drawMVCollectionBrowser();
+      drawYouTubePlaylistBrowser();
     }
   }
   if (raw.encoder2CCW || raw.irVolDn) {
@@ -304,26 +304,26 @@ void handleMVCollectionInput() {
       strncpy(appCtx.currentItemDir, appCtx.availableItems[appCtx.itemNavIndex], ITEM_DIR_LEN - 1);
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
-      loadCollectionMetadata();
+      loadYouTubePlaylistMetadata();
       resetScrollState(&appCtx.scrollState);
-      drawMVCollectionBrowser();
+      drawYouTubePlaylistBrowser();
     }
   }
 
-  // Select collection -> enter video browser
+  // Select playlist -> enter video browser
   if (raw.encoderCW || raw.irChannelUp) {
     raw.encoderCW = false;
     raw.irChannelUp = false;
     if (appCtx.subItemCount > 0) {
       appCtx.currentSubItem = 1;
       appCtx.subItemNavIndex = 0;
-      loadVideoMetadata(appCtx.currentSubItem);
-      appCtx.nextState = STATE_MV_VIDEO_BROWSER;
+      loadYouTubeVideoMetadata(appCtx.currentSubItem);
+      appCtx.nextState = STATE_YOUTUBE_VIDEO_BROWSER;
       appCtx.currentState = STATE_TRANSITION;
       appCtx.transitionStart = millis();
       appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
     } else {
-      dbgPrint("No videos in collection: " + String(appCtx.currentItemDir));
+      dbgPrint("No videos in playlist: " + String(appCtx.currentItemDir));
     }
   }
 
@@ -346,7 +346,7 @@ void handleMVCollectionInput() {
 
 // ─── Video Browser Input Handling ───────────────────────────────────────────
 
-void handleMVVideoBrowserInput() {
+void handleYouTubeVideoBrowserInput() {
   RawInputFlags& raw = appCtx.rawInput;
 
   // Navigate videos
@@ -356,9 +356,9 @@ void handleMVVideoBrowserInput() {
     if (appCtx.currentSubItem < appCtx.subItemCount) {
       appCtx.currentSubItem++;
       appCtx.episodeMetaLoaded = false;
-      loadVideoMetadata(appCtx.currentSubItem);
+      loadYouTubeVideoMetadata(appCtx.currentSubItem);
       resetScrollState(&appCtx.scrollState);
-      drawMVVideoBrowser();
+      drawYouTubeVideoBrowser();
     }
   }
   if (raw.encoder2CCW || raw.irVolDn) {
@@ -367,9 +367,9 @@ void handleMVVideoBrowserInput() {
     if (appCtx.currentSubItem > 1) {
       appCtx.currentSubItem--;
       appCtx.episodeMetaLoaded = false;
-      loadVideoMetadata(appCtx.currentSubItem);
+      loadYouTubeVideoMetadata(appCtx.currentSubItem);
       resetScrollState(&appCtx.scrollState);
-      drawMVVideoBrowser();
+      drawYouTubeVideoBrowser();
     }
   }
 
@@ -379,17 +379,17 @@ void handleMVVideoBrowserInput() {
     raw.irChannelUp = false;
 
     char aviPath[64];
-    snprintf(aviPath, sizeof(aviPath), "%s/%s/V%02d.avi",
-             MUSIC_VIDEOS_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
-    dbgPrint("Playing music video: " + String(aviPath));
+    snprintf(aviPath, sizeof(aviPath), "%s/%s/Y%02d.avi",
+             YOUTUBE_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
+    dbgPrint("Playing YouTube video: " + String(aviPath));
     startGenericPlayback(aviPath);
   }
 
-  // Back to collection browser
+  // Back to playlist browser
   if (raw.encoderCCW || raw.irChannelDn) {
     raw.encoderCCW = false;
     raw.irChannelDn = false;
-    appCtx.nextState = STATE_MV_COLLECTION;
+    appCtx.nextState = STATE_YOUTUBE_PLAYLIST;
     appCtx.currentState = STATE_TRANSITION;
     appCtx.transitionStart = millis();
     appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
@@ -403,16 +403,16 @@ void handleMVVideoBrowserInput() {
 }
 
 // ─── Auto-Advance ───────────────────────────────────────────────────────────
-// Called when a music video finishes playing to advance to the next one.
+// Called when a YouTube video finishes playing to advance to the next one.
 
-void advanceToNextMusicVideo() {
+void advanceToNextYouTubeVideo() {
   if (appCtx.currentSubItem < appCtx.subItemCount) {
     appCtx.currentSubItem++;
-    loadVideoMetadata(appCtx.currentSubItem);
+    loadYouTubeVideoMetadata(appCtx.currentSubItem);
 
     char aviPath[64];
-    snprintf(aviPath, sizeof(aviPath), "%s/%s/V%02d.avi",
-             MUSIC_VIDEOS_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
+    snprintf(aviPath, sizeof(aviPath), "%s/%s/Y%02d.avi",
+             YOUTUBE_DIR, appCtx.currentItemDir, appCtx.currentSubItem);
     dbgPrint("Auto-advancing to: " + String(aviPath));
 
     appCtx.nextState = STATE_PLAYBACK;
@@ -420,13 +420,11 @@ void advanceToNextMusicVideo() {
     appCtx.transitionStart = millis();
     appCtx.transitionDurationMS = TRANSITION_STATIC_MS;
 
-    // startGenericPlayback will be called when we enter STATE_PLAYBACK
-    // But we need to actually start it since generic playback is started before entering state
     startGenericPlayback(aviPath);
   } else {
-    // End of collection - return to video browser
-    dbgPrint("End of MV collection, returning to browser");
-    appCtx.nextState = STATE_MV_VIDEO_BROWSER;
+    // End of playlist - return to video browser
+    dbgPrint("End of YouTube playlist, returning to browser");
+    appCtx.nextState = STATE_YOUTUBE_VIDEO_BROWSER;
     appCtx.currentState = STATE_TRANSITION;
     appCtx.transitionStart = millis();
     appCtx.transitionDurationMS = TRANSITION_STATIC_MS;

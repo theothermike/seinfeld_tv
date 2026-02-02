@@ -185,13 +185,11 @@ void drawPhotoAlbumBrowser() {
     drawText(">", VIDEO_W - 12, thumbY + THUMB_H / 2 - 6, COL_GRAY_MED);
   }
 
-  // Album title
+  // Album title (scrolls if too long)
   if (appCtx.metadataLoaded) {
     const char* title = appCtx.meta2.photoAlbumMeta.title;
-    int titleW = textWidth(title);
-    int titleX = (VIDEO_W - titleW) / 2;
-    if (titleX < 2) titleX = 2;
-    drawText(title, titleX, 92, COL_YELLOW);
+    drawScrollText(title, 2, 92, VIDEO_W - 4, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Photo count
     char infoStr[32];
@@ -204,11 +202,6 @@ void drawPhotoAlbumBrowser() {
     int nameW = textWidth(dirName);
     drawText(dirName, (VIDEO_W - nameW) / 2, 92, COL_YELLOW);
   }
-
-  // Hint
-  const char* hint = "VOL:nav  CH:view";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 122, COL_GRAY_DK);
 
   // Push to display
   waitForScreenDMA();
@@ -299,6 +292,7 @@ void handlePhotoAlbumInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadPhotoAlbumMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawPhotoAlbumBrowser();
     }
   }
@@ -311,6 +305,7 @@ void handlePhotoAlbumInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadPhotoAlbumMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawPhotoAlbumBrowser();
     }
   }

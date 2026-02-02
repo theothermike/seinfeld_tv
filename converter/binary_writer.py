@@ -37,6 +37,8 @@ MUSIC_ALBUM_MAGIC = b"TJAL"
 TRACK_MAGIC = b"TJTK"
 PHOTO_ALBUM_MAGIC = b"TJPA"
 PHOTO_MAGIC = b"TJPH"
+YOUTUBE_PLAYLIST_MAGIC = b"TJYP"
+YOUTUBE_VIDEO_MAGIC = b"TJYV"
 
 # Current format version
 FORMAT_VERSION = 1
@@ -53,6 +55,8 @@ MUSIC_ALBUM_SIZE = 64
 TRACK_SIZE = 64
 PHOTO_ALBUM_SIZE = 64
 PHOTO_SIZE = 64
+YOUTUBE_PLAYLIST_SIZE = 128
+YOUTUBE_VIDEO_SIZE = 128
 
 
 # ─── TV Shows ────────────────────────────────────────────────────────────────
@@ -149,6 +153,26 @@ class PhotoInfo:
     photo_number: int
     caption: str
     date_taken: str
+
+
+# ─── YouTube ────────────────────────────────────────────────────────────────
+
+@dataclass
+class YouTubePlaylistInfo:
+    name: str
+    year: str
+    uploader: str
+    video_count: int
+
+
+@dataclass
+class YouTubeVideoInfo:
+    video_number: int
+    title: str
+    uploader: str
+    upload_date: str
+    runtime_minutes: int
+    description: str
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -540,3 +564,87 @@ def read_photo_metadata(path: Path) -> PhotoInfo:
     caption = data[8:56].rstrip(b"\x00").decode("utf-8", errors="replace")
     date_taken = data[56:64].rstrip(b"\x00").decode("utf-8", errors="replace")
     return PhotoInfo(photo_number=photo_number, caption=caption, date_taken=date_taken)
+
+
+# ─── YouTube Writers/Readers ────────────────────────────────────────────────
+
+def write_youtube_playlist_metadata(path: Path, info: YouTubePlaylistInfo) -> None:
+    """
+    Write playlist.sdb file for YouTube (128 bytes).
+
+    Layout:
+      0-3:    magic "TJYP" (4 bytes)
+      4:      version (uint8)
+      5:      video_count (uint8)
+      6-7:    reserved (2 bytes)
+      8-55:   name (48 bytes, null-padded)
+      56-63:  year (8 bytes, null-padded)
+      64-87:  uploader (24 bytes, null-padded)
+      88-127: reserved (40 bytes, zeroed)
+    """
+    data = bytearray(YOUTUBE_PLAYLIST_SIZE)
+    struct.pack_into("<4sBB2x", data, 0,
+                     YOUTUBE_PLAYLIST_MAGIC, FORMAT_VERSION, info.video_count)
+    data[8:56] = _pad_string(info.name, 48)
+    data[56:64] = _pad_string(info.year, 8)
+    data[64:88] = _pad_string(info.uploader, 24)
+    _write_file(path, bytes(data))
+    logger.info("Wrote YouTube playlist metadata: %s (%d videos)", info.name, info.video_count)
+
+
+def read_youtube_playlist_metadata(path: Path) -> YouTubePlaylistInfo:
+    """Read and parse a YouTube playlist.sdb file."""
+    data = path.read_bytes()
+    if len(data) != YOUTUBE_PLAYLIST_SIZE:
+        raise ValueError(f"Invalid playlist.sdb size: {len(data)} (expected {YOUTUBE_PLAYLIST_SIZE})")
+    magic, version, video_count = struct.unpack_from("<4sBB", data, 0)
+    if magic != YOUTUBE_PLAYLIST_MAGIC:
+        raise ValueError(f"Invalid magic bytes: {magic!r} (expected {YOUTUBE_PLAYLIST_MAGIC!r})")
+    name = data[8:56].rstrip(b"\x00").decode("utf-8", errors="replace")
+    year = data[56:64].rstrip(b"\x00").decode("utf-8", errors="replace")
+    uploader = data[64:88].rstrip(b"\x00").decode("utf-8", errors="replace")
+    return YouTubePlaylistInfo(name=name, year=year, uploader=uploader,
+                               video_count=video_count)
+
+
+def write_youtube_video_metadata(path: Path, info: YouTubeVideoInfo) -> None:
+    """
+    Write Y##.sdb file for YouTube (128 bytes).
+
+    Layout:
+      0-3:    magic "TJYV" (4 bytes)
+      4:      video_number (uint8)
+      5:      reserved (uint8)
+      6-7:    runtime_minutes (uint16 LE)
+      8-55:   title (48 bytes, null-padded)
+      56-67:  uploader (12 bytes, null-padded)
+      68-79:  upload_date (12 bytes, null-padded, "YYYY-MM-DD")
+      80-123: description (44 bytes, null-padded)
+      124-127: reserved (4 bytes, zeroed)
+    """
+    data = bytearray(YOUTUBE_VIDEO_SIZE)
+    struct.pack_into("<4sBxH", data, 0,
+                     YOUTUBE_VIDEO_MAGIC, info.video_number, info.runtime_minutes)
+    data[8:56] = _pad_string(info.title, 48)
+    data[56:68] = _pad_string(info.uploader, 12)
+    data[68:80] = _pad_string(info.upload_date, 12)
+    data[80:124] = _pad_string(info.description, 44)
+    _write_file(path, bytes(data))
+    logger.info("Wrote YouTube video metadata: Y%02d - %s", info.video_number, info.title)
+
+
+def read_youtube_video_metadata(path: Path) -> YouTubeVideoInfo:
+    """Read and parse a YouTube Y##.sdb file."""
+    data = path.read_bytes()
+    if len(data) != YOUTUBE_VIDEO_SIZE:
+        raise ValueError(f"Invalid Y##.sdb size: {len(data)} (expected {YOUTUBE_VIDEO_SIZE})")
+    magic, video_number, _reserved, runtime = struct.unpack_from("<4sBBH", data, 0)
+    if magic != YOUTUBE_VIDEO_MAGIC:
+        raise ValueError(f"Invalid magic bytes: {magic!r} (expected {YOUTUBE_VIDEO_MAGIC!r})")
+    title = data[8:56].rstrip(b"\x00").decode("utf-8", errors="replace")
+    uploader = data[56:68].rstrip(b"\x00").decode("utf-8", errors="replace")
+    upload_date = data[68:80].rstrip(b"\x00").decode("utf-8", errors="replace")
+    description = data[80:124].rstrip(b"\x00").decode("utf-8", errors="replace")
+    return YouTubeVideoInfo(video_number=video_number, title=title, uploader=uploader,
+                            upload_date=upload_date, runtime_minutes=runtime,
+                            description=description)

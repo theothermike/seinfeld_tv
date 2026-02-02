@@ -19,7 +19,8 @@ static const char* mediaTypeLabels[] = {
   "Movies",
   "Music Videos",
   "Music",
-  "Photos"
+  "Photos",
+  "YouTube"
 };
 
 // Settings is an extra entry beyond the media types
@@ -32,7 +33,7 @@ void scanMediaTypes() {
   appCtx.mediaSelectorCount = 0;
 
   // Check each media type directory
-  const char* mediaDirs[] = { TV_DIR, MOVIES_DIR, MUSIC_VIDEOS_DIR, MUSIC_DIR, PHOTOS_DIR };
+  const char* mediaDirs[] = { TV_DIR, MOVIES_DIR, MUSIC_VIDEOS_DIR, MUSIC_DIR, PHOTOS_DIR, YOUTUBE_DIR };
 
   for (int i = 0; i < MEDIA_TYPE_COUNT; i++) {
     appCtx.mediaTypeAvailable[i] = false;

@@ -149,13 +149,11 @@ void drawMovieBrowser() {
     drawText(">", VIDEO_W - 12, thumbY + THUMB_H / 2 - 6, COL_GRAY_MED);
   }
 
-  // Movie title
+  // Movie title (scrolls if too long)
   if (appCtx.metadataLoaded) {
     const char* title = appCtx.meta1.movieMeta.title;
-    int titleW = textWidth(title);
-    int titleX = (VIDEO_W - titleW) / 2;
-    if (titleX < 2) titleX = 2;
-    drawText(title, titleX, 92, COL_YELLOW);
+    drawScrollText(title, 2, 92, VIDEO_W - 4, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Year + runtime
     char infoStr[48];
@@ -174,11 +172,6 @@ void drawMovieBrowser() {
     int nameW = textWidth(dirName);
     drawText(dirName, (VIDEO_W - nameW) / 2, 92, COL_YELLOW);
   }
-
-  // Hint text
-  const char* hint = "VOL:nav  CH:play";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 122, COL_GRAY_DK);
 
   // Push to display
   waitForScreenDMA();
@@ -201,6 +194,7 @@ void handleMovieBrowserInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadMovieMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawMovieBrowser();
     }
   }
@@ -213,6 +207,7 @@ void handleMovieBrowserInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadMovieMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawMovieBrowser();
     }
   }

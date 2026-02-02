@@ -9,4 +9,5 @@ sdcard_test/
 docs/
 *.uf2
 .claude/
+.env
 

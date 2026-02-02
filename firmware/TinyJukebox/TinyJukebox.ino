@@ -61,6 +61,60 @@ int staticTimeMS = 300;
 char splashVidFileName[20] = "";
 bool splashPlaybackMode = false;
 
+// ─── Scroll State Helpers ───────────────────────────────────────────────────
+// Defined here (not in uiHelpers.h) because TinyJukebox.ino doesn't include
+// GraphicsBuffer2 which uiHelpers.h requires.
+
+#define SCROLL_PAUSE_MAIN_MS       1500
+#define SCROLL_STEP_MAIN_MS        50
+#define SCROLL_RESET_PAUSE_MAIN_MS 1000
+
+void resetScrollState(ScrollState* ss) {
+  memset(ss, 0, sizeof(ScrollState));
+}
+
+bool updateScrollState(ScrollState* ss, uint32_t nowMs) {
+  bool changed = false;
+  for (int i = 0; i < MAX_SCROLL_SLOTS; i++) {
+    ScrollSlot* slot = &ss->slots[i];
+    if (!slot->active || slot->maxOffset <= 0) continue;
+    switch (slot->phase) {
+      case 0: // initial pause
+        if (nowMs - slot->lastStepMs >= SCROLL_PAUSE_MAIN_MS) {
+          slot->phase = 1;
+          slot->lastStepMs = nowMs;
+          changed = true;
+        }
+        break;
+      case 1: // scrolling
+        if (nowMs - slot->lastStepMs >= SCROLL_STEP_MAIN_MS) {
+          slot->offsetPx++;
+          slot->lastStepMs = nowMs;
+          changed = true;
+          if (slot->offsetPx >= slot->maxOffset) {
+            slot->phase = 2;
+            slot->lastStepMs = nowMs;
+          }
+        }
+        break;
+      case 2: // end pause
+        if (nowMs - slot->lastStepMs >= SCROLL_RESET_PAUSE_MAIN_MS) {
+          slot->phase = 3;
+          slot->lastStepMs = nowMs;
+          changed = true;
+        }
+        break;
+      case 3: // reset
+        slot->offsetPx = 0;
+        slot->phase = 0;
+        slot->lastStepMs = nowMs;
+        changed = true;
+        break;
+    }
+  }
+  return changed;
+}
+
 // ─── Forward Declarations ───────────────────────────────────────────────────
 void enterState(AppState state);
 void loopBoot();
@@ -77,6 +131,8 @@ void loopMusicAlbum();
 void loopMusicTrack();
 void loopPhotoAlbum();
 void loopPhotoSlideshow();
+void loopYouTubePlaylist();
+void loopYouTubeVideoBrowser();
 void loopSettings();
 void loopPlayback();
 void loopTransition();
@@ -92,6 +148,7 @@ AppState getFirstStateForMediaType(MediaType type) {
     case MEDIA_MUSIC_VIDEOS: return STATE_MV_COLLECTION;
     case MEDIA_MUSIC:        return STATE_MUSIC_ARTIST;
     case MEDIA_PHOTOS:       return STATE_PHOTO_ALBUM;
+    case MEDIA_YOUTUBE:      return STATE_YOUTUBE_PLAYLIST;
     default:                 return STATE_MEDIA_SELECTOR;
   }
 }
@@ -170,6 +227,7 @@ void setup() {
   appCtx.currentSeason = 1;
   appCtx.currentEpisode = 1;
   appCtx.slideshowIntervalSec = DEFAULT_SLIDESHOW_SEC;
+  resetScrollState(&appCtx.scrollState);
 
   // Scan for available media types
   scanMediaTypes();
@@ -178,32 +236,7 @@ void setup() {
   scanAvailableShows();
 
   if (appCtx.mediaSelectorCount == 0) {
-    dbgPrint("No media found - waiting for USB upload");
-    displayNoVideosFound();
-    while (1) {
-#ifdef has_USB_MSC
-      if (USBJustConnected()) {
-        USBMSCStart();
-        for (int i = 0; i < 50; i++) { delay(1); yield(); }
-        displayUSBMSCmessage();
-      }
-      if (handleUSBMSC(powerButtonPressed())) {
-        uint16_t totalJPEGBytesUnused;
-        incomingCDCHandler(NULL, 0, &live, &totalJPEGBytesUnused);
-        continue;
-      }
-      if (USBMSCJustStopped()) {
-        for (int i = 0; i < 50; i++) { delay(1); yield(); }
-        clearPowerButtonPressInt();
-        scanMediaTypes();
-        scanAvailableShows();
-        if (appCtx.mediaSelectorCount > 0) break;
-        displayNoVideosFound();
-      }
-#endif
-      if (powerButtonPressed()) hardwarePowerOff();
-      delay(100);
-    }
+    dbgPrint("No media found on SD card - proceeding to media selector");
   }
 
   // Load saved settings
@@ -279,53 +312,63 @@ void enterState(AppState state) {
     case STATE_SHOW_BROWSER:
       appCtx.currentMediaType = MEDIA_TV;
       loadShowMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawShowBrowser();
       break;
 
     case STATE_SEASON_BROWSER:
       loadSeasonMetadata(appCtx.currentSeason);
+      resetScrollState(&appCtx.scrollState);
       drawSeasonBrowser();
       break;
 
     case STATE_EPISODE_BROWSER:
       loadSeasonMetadata(appCtx.currentSeason);
       loadEpisodeMetadata(appCtx.currentSeason, appCtx.currentEpisode);
+      resetScrollState(&appCtx.scrollState);
       drawEpisodeBrowser();
       break;
 
     case STATE_MOVIE_BROWSER:
       appCtx.currentMediaType = MEDIA_MOVIES;
       scanMovies();
+      resetScrollState(&appCtx.scrollState);
       drawMovieBrowser();
       break;
 
     case STATE_MV_COLLECTION:
       appCtx.currentMediaType = MEDIA_MUSIC_VIDEOS;
       scanMVCollections();
+      resetScrollState(&appCtx.scrollState);
       drawMVCollectionBrowser();
       break;
 
     case STATE_MV_VIDEO_BROWSER:
+      resetScrollState(&appCtx.scrollState);
       drawMVVideoBrowser();
       break;
 
     case STATE_MUSIC_ARTIST:
       appCtx.currentMediaType = MEDIA_MUSIC;
       scanMusicArtists();
+      resetScrollState(&appCtx.scrollState);
       drawMusicArtistBrowser();
       break;
 
     case STATE_MUSIC_ALBUM:
+      resetScrollState(&appCtx.scrollState);
       drawMusicAlbumBrowser();
       break;
 
     case STATE_MUSIC_TRACK:
+      resetScrollState(&appCtx.scrollState);
       drawMusicTrackBrowser();
       break;
 
     case STATE_PHOTO_ALBUM:
       appCtx.currentMediaType = MEDIA_PHOTOS;
       scanPhotoAlbums();
+      resetScrollState(&appCtx.scrollState);
       drawPhotoAlbumBrowser();
       break;
 
@@ -333,6 +376,18 @@ void enterState(AppState state) {
       appCtx.slideshowLastAdvance = millis();
       appCtx.slideshowCurrentPhoto = 1;
       displayPhoto(appCtx.slideshowCurrentPhoto);
+      break;
+
+    case STATE_YOUTUBE_PLAYLIST:
+      appCtx.currentMediaType = MEDIA_YOUTUBE;
+      scanYouTubePlaylists();
+      resetScrollState(&appCtx.scrollState);
+      drawYouTubePlaylistBrowser();
+      break;
+
+    case STATE_YOUTUBE_VIDEO_BROWSER:
+      resetScrollState(&appCtx.scrollState);
+      drawYouTubeVideoBrowser();
       break;
 
     case STATE_SETTINGS:
@@ -536,6 +591,8 @@ void loop() {
     case STATE_MUSIC_TRACK:    loopMusicTrack(); break;
     case STATE_PHOTO_ALBUM:    loopPhotoAlbum(); break;
     case STATE_PHOTO_SLIDESHOW: loopPhotoSlideshow(); break;
+    case STATE_YOUTUBE_PLAYLIST: loopYouTubePlaylist(); break;
+    case STATE_YOUTUBE_VIDEO_BROWSER: loopYouTubeVideoBrowser(); break;
     case STATE_SETTINGS:       loopSettings(); break;
     case STATE_PLAYBACK:       loopPlayback(); break;
     case STATE_TRANSITION:     loopTransition(); break;
@@ -636,6 +693,10 @@ void loopShowBrowser() {
     return;
   }
 
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawShowBrowser();
+  }
+
   handleShowBrowserInput();
 }
 
@@ -648,6 +709,10 @@ void loopSeasonBrowser() {
     appCtx.rawInput.irPower = false;
     enterState(STATE_POWER_OFF);
     return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawSeasonBrowser();
   }
 
   handleSeasonBrowserInput();
@@ -664,6 +729,10 @@ void loopEpisodeBrowser() {
     return;
   }
 
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawEpisodeBrowser();
+  }
+
   handleEpisodeBrowserInput();
 }
 
@@ -676,6 +745,10 @@ void loopMovieBrowser() {
     appCtx.rawInput.irPower = false;
     enterState(STATE_POWER_OFF);
     return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMovieBrowser();
   }
 
   handleMovieBrowserInput();
@@ -692,6 +765,10 @@ void loopMVCollection() {
     return;
   }
 
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMVCollectionBrowser();
+  }
+
   handleMVCollectionInput();
 }
 
@@ -704,6 +781,10 @@ void loopMVVideoBrowser() {
     appCtx.rawInput.irPower = false;
     enterState(STATE_POWER_OFF);
     return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMVVideoBrowser();
   }
 
   handleMVVideoBrowserInput();
@@ -720,6 +801,10 @@ void loopMusicArtist() {
     return;
   }
 
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMusicArtistBrowser();
+  }
+
   handleMusicArtistInput();
 }
 
@@ -732,6 +817,10 @@ void loopMusicAlbum() {
     appCtx.rawInput.irPower = false;
     enterState(STATE_POWER_OFF);
     return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMusicAlbumBrowser();
   }
 
   handleMusicAlbumInput();
@@ -748,6 +837,10 @@ void loopMusicTrack() {
     return;
   }
 
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawMusicTrackBrowser();
+  }
+
   handleMusicTrackInput();
 }
 
@@ -760,6 +853,10 @@ void loopPhotoAlbum() {
     appCtx.rawInput.irPower = false;
     enterState(STATE_POWER_OFF);
     return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawPhotoAlbumBrowser();
   }
 
   handlePhotoAlbumInput();
@@ -783,6 +880,42 @@ void loopPhotoSlideshow() {
       (uint32_t)appCtx.slideshowIntervalSec * 1000) {
     advanceSlideshow();
   }
+}
+
+void loopYouTubePlaylist() {
+  updateRawButtonStates(&appCtx.rawInput);
+  IRInputRaw(&appCtx.rawInput);
+
+  if (appCtx.rawInput.power || appCtx.rawInput.irPower) {
+    appCtx.rawInput.power = false;
+    appCtx.rawInput.irPower = false;
+    enterState(STATE_POWER_OFF);
+    return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawYouTubePlaylistBrowser();
+  }
+
+  handleYouTubePlaylistInput();
+}
+
+void loopYouTubeVideoBrowser() {
+  updateRawButtonStates(&appCtx.rawInput);
+  IRInputRaw(&appCtx.rawInput);
+
+  if (appCtx.rawInput.power || appCtx.rawInput.irPower) {
+    appCtx.rawInput.power = false;
+    appCtx.rawInput.irPower = false;
+    enterState(STATE_POWER_OFF);
+    return;
+  }
+
+  if (updateScrollState(&appCtx.scrollState, millis())) {
+    drawYouTubeVideoBrowser();
+  }
+
+  handleYouTubeVideoBrowserInput();
 }
 
 void loopSettings() {
@@ -840,6 +973,8 @@ void loopPlayback() {
       advanceToNextMusicVideo();
     } else if (appCtx.currentMediaType == MEDIA_MUSIC) {
       advanceToNextTrack();
+    } else if (appCtx.currentMediaType == MEDIA_YOUTUBE) {
+      advanceToNextYouTubeVideo();
     } else {
       // Movies: just go back to browser
       appCtx.nextState = STATE_MOVIE_BROWSER;
@@ -859,6 +994,7 @@ void loopPlayback() {
       case MEDIA_MOVIES:       backState = STATE_MOVIE_BROWSER; break;
       case MEDIA_MUSIC_VIDEOS: backState = STATE_MV_VIDEO_BROWSER; break;
       case MEDIA_MUSIC:        backState = STATE_MUSIC_TRACK; break;
+      case MEDIA_YOUTUBE:      backState = STATE_YOUTUBE_VIDEO_BROWSER; break;
       default:                 backState = STATE_MEDIA_SELECTOR; break;
     }
     appCtx.nextState = backState;
@@ -906,6 +1042,8 @@ void loopPlayback() {
       advanceToNextMusicVideo();
     } else if (appCtx.currentMediaType == MEDIA_MUSIC) {
       advanceToNextTrack();
+    } else if (appCtx.currentMediaType == MEDIA_YOUTUBE) {
+      advanceToNextYouTubeVideo();
     } else {
       // Movie ended - back to browser
       appCtx.nextState = STATE_MOVIE_BROWSER;

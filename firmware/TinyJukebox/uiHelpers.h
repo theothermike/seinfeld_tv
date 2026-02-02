@@ -71,4 +71,64 @@ static inline int textWidth(const char* text) {
   return strlen(text) * 8;
 }
 
+// ─── Scrolling Text Support ─────────────────────────────────────────────────
+// ScrollSlot and ScrollState structs are defined in appState.h.
+// resetScrollState() and updateScrollState() are defined in TinyJukebox.ino
+// (they don't depend on GraphicsBuffer2 so can live outside this header).
+
+// Forward declarations for functions defined in TinyJukebox.ino
+void resetScrollState(ScrollState* ss);
+bool updateScrollState(ScrollState* ss, uint32_t nowMs);
+
+// Draw text clipped to maxWidth pixels, scrolled by slot->offsetPx.
+// If text fits in maxWidth, draws normally. Otherwise enables scrolling.
+static inline void drawScrollText(const char* text, int x, int y, int maxWidth,
+                                   uint16_t color, ScrollSlot* slot) {
+  extern uint16_t frameBuf[];
+  extern GraphicsBuffer2 screenBuffer;
+
+  int tw = textWidth(text);
+
+  if (tw <= maxWidth) {
+    // Text fits — draw normally, no scrolling needed
+    drawText(text, x, y, color);
+    slot->maxOffset = 0;
+    slot->active = false;
+    return;
+  }
+
+  // Text overflows — set up scroll parameters
+  int overflow = tw - maxWidth;
+  if (slot->maxOffset != overflow) {
+    // First call or text changed — initialize
+    slot->maxOffset = overflow;
+    if (slot->phase == 0 && slot->offsetPx == 0 && slot->lastStepMs == 0) {
+      slot->lastStepMs = millis();
+    }
+    slot->active = true;
+  }
+
+  // Draw text shifted left by offsetPx, then black out only where text leaked
+  int drawX = x - slot->offsetPx;
+  drawText(text, drawX, y, color);
+
+  // Only black out the narrow strips where text actually overflowed the
+  // clip region [x, x+maxWidth]. Don't touch anything outside the text area
+  // (that would destroy thumbnails and other UI elements on the same row).
+  int textH = 18;  // liberationSansNarrow_14pt character height
+  int textLeft = (drawX > 0) ? drawX : 0;
+  int textRight = drawX + tw;
+  if (textRight > VIDEO_W) textRight = VIDEO_W;
+
+  // Left overflow: text pixels drawn between textLeft and x
+  if (textLeft < x) {
+    fillRect(textLeft, y, x - textLeft, textH, COL_BG);
+  }
+  // Right overflow: text pixels drawn between x+maxWidth and textRight
+  int rightEdge = x + maxWidth;
+  if (textRight > rightEdge) {
+    fillRect(rightEdge, y, textRight - rightEdge, textH, COL_BG);
+  }
+}
+
 #endif // UI_HELPERS_H

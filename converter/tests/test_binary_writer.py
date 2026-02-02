@@ -35,6 +35,12 @@ from converter.binary_writer import (
     write_photo_metadata, read_photo_metadata,
     PHOTO_ALBUM_MAGIC, PHOTO_MAGIC,
     PHOTO_ALBUM_SIZE, PHOTO_SIZE,
+    # YouTube
+    YouTubePlaylistInfo, YouTubeVideoInfo,
+    write_youtube_playlist_metadata, read_youtube_playlist_metadata,
+    write_youtube_video_metadata, read_youtube_video_metadata,
+    YOUTUBE_PLAYLIST_MAGIC, YOUTUBE_VIDEO_MAGIC,
+    YOUTUBE_PLAYLIST_SIZE, YOUTUBE_VIDEO_SIZE,
     # Shared
     FORMAT_VERSION,
 )
@@ -591,3 +597,152 @@ class TestPhotoMetadata:
         write_photo_metadata(path, PhotoInfo(1, "C" * 100, "20240101"))
         loaded = read_photo_metadata(path)
         assert len(loaded.caption) == 48
+
+
+# ─── YouTube ────────────────────────────────────────────────────────────────
+
+class TestYouTubePlaylistMetadata:
+    def test_round_trip(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        original = YouTubePlaylistInfo(
+            name="Favorites",
+            year="2024",
+            uploader="TechChannel",
+            video_count=15,
+        )
+        write_youtube_playlist_metadata(path, original)
+        loaded = read_youtube_playlist_metadata(path)
+
+        assert loaded.name == original.name
+        assert loaded.year == original.year
+        assert loaded.uploader == original.uploader
+        assert loaded.video_count == original.video_count
+
+    def test_file_size(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo("Test", "2024", "User", 5))
+        assert path.stat().st_size == YOUTUBE_PLAYLIST_SIZE
+
+    def test_magic_bytes(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo("Test", "2024", "User", 5))
+        data = path.read_bytes()
+        assert data[:4] == YOUTUBE_PLAYLIST_MAGIC
+
+    def test_version(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo("Test", "2024", "User", 5))
+        data = path.read_bytes()
+        assert data[4] == FORMAT_VERSION
+
+    def test_binary_layout(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo(
+            name="My Playlist", year="2023", uploader="TestUser", video_count=8
+        ))
+        data = path.read_bytes()
+
+        assert data[0:4] == b"TJYP"
+        assert data[4] == FORMAT_VERSION
+        assert data[5] == 8  # video_count
+        assert data[8:56].rstrip(b"\x00") == b"My Playlist"
+        assert data[56:64].rstrip(b"\x00") == b"2023"
+        assert data[64:88].rstrip(b"\x00") == b"TestUser"
+
+    def test_invalid_magic_raises(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        path.write_bytes(b"\x00" * YOUTUBE_PLAYLIST_SIZE)
+        with pytest.raises(ValueError, match="Invalid magic"):
+            read_youtube_playlist_metadata(path)
+
+    def test_invalid_size_raises(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        path.write_bytes(b"\x00" * 64)
+        with pytest.raises(ValueError, match="Invalid playlist.sdb size"):
+            read_youtube_playlist_metadata(path)
+
+    def test_long_name_truncated(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo("A" * 100, "2024", "User", 5))
+        loaded = read_youtube_playlist_metadata(path)
+        assert len(loaded.name) == 48
+
+    def test_long_uploader_truncated(self, tmp_dir):
+        path = tmp_dir / "playlist.sdb"
+        write_youtube_playlist_metadata(path, YouTubePlaylistInfo("Test", "2024", "U" * 50, 5))
+        loaded = read_youtube_playlist_metadata(path)
+        assert len(loaded.uploader) == 24
+
+
+class TestYouTubeVideoMetadata:
+    def test_round_trip(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        original = YouTubeVideoInfo(
+            video_number=1,
+            title="How to Build a Computer",
+            uploader="TechGuru",
+            upload_date="2024-01-15",
+            runtime_minutes=12,
+            description="Step by step PC building guide.",
+        )
+        write_youtube_video_metadata(path, original)
+        loaded = read_youtube_video_metadata(path)
+
+        assert loaded.video_number == original.video_number
+        assert loaded.title == original.title
+        assert loaded.uploader == original.uploader
+        assert loaded.upload_date == original.upload_date
+        assert loaded.runtime_minutes == original.runtime_minutes
+        assert loaded.description == original.description
+
+    def test_file_size(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        write_youtube_video_metadata(path, YouTubeVideoInfo(1, "Test", "User", "2024-01-01", 5, "Desc"))
+        assert path.stat().st_size == YOUTUBE_VIDEO_SIZE
+
+    def test_magic_bytes(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        write_youtube_video_metadata(path, YouTubeVideoInfo(1, "Test", "User", "2024-01-01", 5, "Desc"))
+        data = path.read_bytes()
+        assert data[:4] == YOUTUBE_VIDEO_MAGIC
+
+    def test_binary_layout(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        write_youtube_video_metadata(path, YouTubeVideoInfo(
+            video_number=3, title="Test Video", uploader="Creator",
+            upload_date="2024-06-15", runtime_minutes=25,
+            description="A test video description."
+        ))
+        data = path.read_bytes()
+
+        assert data[0:4] == b"TJYV"
+        assert data[4] == 3  # video_number
+        assert struct.unpack_from("<H", data, 6)[0] == 25  # runtime
+        assert data[8:56].rstrip(b"\x00") == b"Test Video"
+        assert data[56:68].rstrip(b"\x00") == b"Creator"
+        assert data[68:80].rstrip(b"\x00") == b"2024-06-15"
+        assert data[80:124].rstrip(b"\x00") == b"A test video description."
+
+    def test_invalid_magic_raises(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        path.write_bytes(b"\x00" * YOUTUBE_VIDEO_SIZE)
+        with pytest.raises(ValueError, match="Invalid magic"):
+            read_youtube_video_metadata(path)
+
+    def test_invalid_size_raises(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        path.write_bytes(b"\x00" * 64)
+        with pytest.raises(ValueError, match="Invalid Y##.sdb size"):
+            read_youtube_video_metadata(path)
+
+    def test_long_title_truncated(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        write_youtube_video_metadata(path, YouTubeVideoInfo(1, "T" * 100, "User", "2024-01-01", 5, "Desc"))
+        loaded = read_youtube_video_metadata(path)
+        assert len(loaded.title) == 48
+
+    def test_long_description_truncated(self, tmp_dir):
+        path = tmp_dir / "Y01.sdb"
+        write_youtube_video_metadata(path, YouTubeVideoInfo(1, "Test", "User", "2024-01-01", 5, "D" * 100))
+        loaded = read_youtube_video_metadata(path)
+        assert len(loaded.description) == 44

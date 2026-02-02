@@ -49,13 +49,11 @@ void drawShowBrowser() {
     drawText(">", VIDEO_W - 12, thumbY + THUMB_H / 2 - 6, COL_GRAY_MED);
   }
 
-  // Show name (yellow, centered)
+  // Show name (yellow, scrolls if too long)
   if (appCtx.metadataLoaded) {
     const char* showName = appCtx.meta1.showMeta.name;
-    int nameW = textWidth(showName);
-    int nameX = (VIDEO_W - nameW) / 2;
-    if (nameX < 2) nameX = 2;
-    drawText(showName, nameX, 92, COL_YELLOW);
+    drawScrollText(showName, 2, 92, VIDEO_W - 4, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Info line: year + season count
     char infoStr[48];
@@ -69,11 +67,6 @@ void drawShowBrowser() {
     int nameW = textWidth(dirName);
     drawText(dirName, (VIDEO_W - nameW) / 2, 92, COL_YELLOW);
   }
-
-  // Hint text
-  const char* hint = "VOL:nav  CH:select";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 122, COL_GRAY_DK);
 
   // Push to display
   waitForScreenDMA();
@@ -92,12 +85,10 @@ void drawShowBrowser() {
 void drawSeasonBrowser() {
   clearFrameBuf();
 
-  // Show name - centered at top
+  // Show name - centered at top (scrolls if too long)
   const char* showName = appCtx.meta1.showMeta.name;
-  int nameW = textWidth(showName);
-  int nameX = (VIDEO_W - nameW) / 2;
-  if (nameX < 2) nameX = 2;
-  drawText(showName, nameX, 8, COL_WHITE);
+  drawScrollText(showName, 2, 8, VIDEO_W - 4, COL_WHITE,
+                 &appCtx.scrollState.slots[0]);
 
   // Divider line
   drawHLine(10, 24, VIDEO_W - 20, COL_GRAY_DK);
@@ -131,11 +122,6 @@ void drawSeasonBrowser() {
     drawText(epStr, (VIDEO_W - epW) / 2, 86, COL_GRAY_LT);
   }
 
-  // Hint text
-  const char* hint = "VOL:nav  CH:select";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 120, COL_GRAY_DK);
-
   // Push to display
   waitForScreenDMA();
   setScreenAddressWindow(VIDEO_X, VIDEO_Y, VIDEO_W, VIDEO_H);
@@ -163,16 +149,8 @@ void drawEpisodeBrowser() {
   // Divider
   drawHLine(2, 16, VIDEO_W - 4, COL_GRAY_DK);
 
-  // Thumbnail area (left side: x=2, y=19, 108x67)
-  char thumbPath[64];
-  getEpisodeThumbPath(thumbPath, sizeof(thumbPath),
-                      appCtx.currentSeason, appCtx.currentEpisode);
-  if (!displayThumbnail(thumbPath, 2, 19)) {
-    // Placeholder gray box if thumbnail missing
-    fillRect(2, 19, THUMB_W, THUMB_H, COL_GRAY_DK);
-  }
-
-  // Episode info (right side, x=114)
+  // Episode info (right side, x=114) - drawn BEFORE thumbnail so thumbnail
+  // overwrites any scrolling text that bleeds left into the thumbnail area
   int infoX = 114;
 
   // Episode number
@@ -185,69 +163,33 @@ void drawEpisodeBrowser() {
   }
   drawText(epNumStr, infoX, 22, COL_WHITE);
 
-  // Episode title (may need truncation for display)
+  // Episode title (scrolls if too long)
   if (appCtx.episodeMetaLoaded) {
-    // Title - possibly two lines
-    char titleBuf[49];
-    strncpy(titleBuf, appCtx.meta3.episodeMeta.title, 48);
-    titleBuf[48] = '\0';
-
-    // Truncate to fit ~12 chars per line in the info area
-    char line1[13], line2[13];
-    memset(line1, 0, sizeof(line1));
-    memset(line2, 0, sizeof(line2));
-
-    if (strlen(titleBuf) <= 12) {
-      strncpy(line1, titleBuf, 12);
-    } else {
-      // Find word break near char 12
-      int breakAt = 12;
-      while (breakAt > 0 && titleBuf[breakAt] != ' ') breakAt--;
-      if (breakAt == 0) breakAt = 12;
-      strncpy(line1, titleBuf, breakAt);
-      strncpy(line2, titleBuf + breakAt + (titleBuf[breakAt] == ' ' ? 1 : 0), 12);
-    }
-
-    drawText(line1, infoX, 38, COL_YELLOW);
-    if (line2[0]) {
-      drawText(line2, infoX, 52, COL_YELLOW);
-    }
+    drawScrollText(appCtx.meta3.episodeMeta.title, infoX, 38,
+                   VIDEO_W - infoX - 2, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Air date
-    drawText(appCtx.meta3.episodeMeta.airDate, infoX, 68, COL_GRAY_LT);
+    drawText(appCtx.meta3.episodeMeta.airDate, infoX, 54, COL_GRAY_LT);
+  }
+
+  // Thumbnail area (left side: x=2, y=19, 108x67) - drawn AFTER text
+  // so it overwrites any scrolling text bleed into the thumbnail region
+  char thumbPath[64];
+  getEpisodeThumbPath(thumbPath, sizeof(thumbPath),
+                      appCtx.currentSeason, appCtx.currentEpisode);
+  if (!displayThumbnail(thumbPath, 2, 19)) {
+    fillRect(2, 19, THUMB_W, THUMB_H, COL_GRAY_DK);
   }
 
   // Lower divider
   drawHLine(2, 88, VIDEO_W - 4, COL_GRAY_DK);
 
-  // Hint text
-  drawText("CH:play  VOL:nav", 4, 93, COL_GRAY_DK);
-
-  // Description
+  // Description (scrolls if too long)
   if (appCtx.episodeMetaLoaded && appCtx.meta3.episodeMeta.description[0]) {
-    char descBuf[57];
-    strncpy(descBuf, appCtx.meta3.episodeMeta.description, 56);
-    descBuf[56] = '\0';
-
-    // Split into two lines if needed (~26 chars per line)
-    char dLine1[27], dLine2[27];
-    memset(dLine1, 0, sizeof(dLine1));
-    memset(dLine2, 0, sizeof(dLine2));
-
-    if (strlen(descBuf) <= 26) {
-      strncpy(dLine1, descBuf, 26);
-    } else {
-      int breakAt = 26;
-      while (breakAt > 0 && descBuf[breakAt] != ' ') breakAt--;
-      if (breakAt == 0) breakAt = 26;
-      strncpy(dLine1, descBuf, breakAt);
-      strncpy(dLine2, descBuf + breakAt + (descBuf[breakAt] == ' ' ? 1 : 0), 26);
-    }
-
-    drawText(dLine1, 4, 108, COL_GRAY_LT);
-    if (dLine2[0]) {
-      drawText(dLine2, 4, 122, COL_GRAY_LT);
-    }
+    drawScrollText(appCtx.meta3.episodeMeta.description, 4, 93,
+                   VIDEO_W - 8, COL_GRAY_LT,
+                   &appCtx.scrollState.slots[1]);
   }
 
   // Push to display
@@ -275,6 +217,7 @@ void handleShowBrowserInput() {
       appCtx.currentShowDir[SHOW_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadShowMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawShowBrowser();
     }
   }
@@ -287,6 +230,7 @@ void handleShowBrowserInput() {
       appCtx.currentShowDir[SHOW_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadShowMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawShowBrowser();
     }
   }
@@ -344,6 +288,7 @@ void handleSeasonBrowserInput() {
       appCtx.currentSeason = appCtx.availableSeasons[appCtx.seasonNavIndex];
       appCtx.seasonMetaLoaded = false;
       loadSeasonMetadata(appCtx.currentSeason);
+      resetScrollState(&appCtx.scrollState);
       drawSeasonBrowser();
     }
   }
@@ -355,6 +300,7 @@ void handleSeasonBrowserInput() {
       appCtx.currentSeason = appCtx.availableSeasons[appCtx.seasonNavIndex];
       appCtx.seasonMetaLoaded = false;
       loadSeasonMetadata(appCtx.currentSeason);
+      resetScrollState(&appCtx.scrollState);
       drawSeasonBrowser();
     }
   }
@@ -405,6 +351,7 @@ void handleEpisodeBrowserInput() {
       appCtx.currentEpisode++;
       appCtx.episodeMetaLoaded = false;
       loadEpisodeMetadata(appCtx.currentSeason, appCtx.currentEpisode);
+      resetScrollState(&appCtx.scrollState);
       drawEpisodeBrowser();
     }
   }
@@ -416,6 +363,7 @@ void handleEpisodeBrowserInput() {
       appCtx.currentEpisode--;
       appCtx.episodeMetaLoaded = false;
       loadEpisodeMetadata(appCtx.currentSeason, appCtx.currentEpisode);
+      resetScrollState(&appCtx.scrollState);
       drawEpisodeBrowser();
     }
   }

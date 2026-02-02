@@ -5,7 +5,7 @@ TinyJukebox Converter - Main CLI entry point.
 Converts media for TinyTV 2 playback with metadata, thumbnails,
 and proper SD card directory layout.
 
-Supported types: tv, movie, music-video, music, photo
+Supported types: tv, movie, music-video, music, photo, youtube
 
 Usage:
     python -m converter.convert --type tv --input-dir ./episodes/ --output-dir ./sdcard/ --show "Seinfeld"
@@ -22,6 +22,7 @@ from .movie_packager import package_movie
 from .music_video_packager import package_music_videos
 from .music_packager import package_music
 from .photo_packager import package_photos
+from .youtube_packager import package_youtube
 
 
 def main():
@@ -38,7 +39,7 @@ Examples:
 
     parser.add_argument(
         "--type", type=str, default="tv",
-        choices=["tv", "movie", "music-video", "music", "photo"],
+        choices=["tv", "movie", "music-video", "music", "photo", "youtube"],
         help="Media type to convert (default: tv)",
     )
     parser.add_argument(
@@ -83,6 +84,19 @@ Examples:
     parser.add_argument(
         "--album", type=str, default=None,
         help="Album name (photo)",
+    )
+    # YouTube-specific
+    parser.add_argument(
+        "--url", type=str, default=None,
+        help="YouTube video or playlist URL (youtube)",
+    )
+    parser.add_argument(
+        "--playlist", type=str, default=None,
+        help="Playlist display name (youtube, optional - auto-detected if omitted)",
+    )
+    parser.add_argument(
+        "--cookies-from-browser", type=str, default=None,
+        help="Browser to extract cookies from for YouTube auth (e.g. firefox, chrome)",
     )
     # Shared
     parser.add_argument(
@@ -235,6 +249,20 @@ Examples:
             input_dir=args.input_dir,
             output_dir=args.output_dir,
             album_name=args.album,
+        )
+
+    elif media_type == "youtube":
+        if not args.url:
+            logging.error("--url is required for YouTube")
+            sys.exit(1)
+
+        success = package_youtube(
+            url=args.url,
+            output_dir=args.output_dir,
+            playlist_name=args.playlist,
+            quality=args.quality,
+            fps=args.fps,
+            cookies_from_browser=args.cookies_from_browser,
         )
 
     if success:

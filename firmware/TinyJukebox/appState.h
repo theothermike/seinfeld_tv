@@ -3,7 +3,7 @@
 //
 //  State machine, context struct, and binary metadata structs that match
 //  the Python converter's .sdb binary format.
-//  Supports: TV Shows, Movies, Music Videos, Music, Photos
+//  Supports: TV Shows, Movies, Music Videos, Music, Photos, YouTube
 //-------------------------------------------------------------------------------
 
 #ifndef APPSTATE_H
@@ -19,6 +19,7 @@ enum MediaType {
   MEDIA_MUSIC_VIDEOS,
   MEDIA_MUSIC,
   MEDIA_PHOTOS,
+  MEDIA_YOUTUBE,
   MEDIA_TYPE_COUNT  // Always last - gives us the count
 };
 
@@ -44,6 +45,9 @@ enum AppState {
   // Photos
   STATE_PHOTO_ALBUM,
   STATE_PHOTO_SLIDESHOW,
+  // YouTube
+  STATE_YOUTUBE_PLAYLIST,
+  STATE_YOUTUBE_VIDEO_BROWSER,
   // Settings
   STATE_SETTINGS,
   // Shared
@@ -186,6 +190,33 @@ struct PhotoMetadata {
   char    dateTaken[8];      // null-padded
 } __attribute__((packed));
 
+// --- YouTube ---
+
+// playlist.sdb - 128 bytes
+struct YouTubePlaylistMetadata {
+  char    magic[4];          // "TJYP"
+  uint8_t version;
+  uint8_t videoCount;
+  uint8_t reserved1[2];
+  char    name[48];          // null-padded
+  char    year[8];           // null-padded
+  char    uploader[24];      // null-padded
+  uint8_t reserved2[40];
+} __attribute__((packed));
+
+// Y##.sdb - 128 bytes
+struct YouTubeVideoMetadata {
+  char     magic[4];         // "TJYV"
+  uint8_t  videoNumber;
+  uint8_t  reserved1;
+  uint16_t runtimeMinutes;   // LE
+  char     title[48];        // null-padded
+  char     uploader[12];     // null-padded
+  char     uploadDate[12];   // null-padded "YYYY-MM-DD"
+  char     description[44];  // null-padded
+  uint8_t  reserved2[4];
+} __attribute__((packed));
+
 // ─── Input Flags (extended from upstream) ────────────────────────────────────
 
 struct RawInputFlags {
@@ -208,6 +239,22 @@ struct RawInputFlags {
 #define MAX_ITEMS    20
 #define SHOW_DIR_LEN 32
 #define ITEM_DIR_LEN 32
+
+// ─── Scrolling Text State ───────────────────────────────────────────────────
+
+#define MAX_SCROLL_SLOTS 4   // max simultaneous scrolling text fields per screen
+
+struct ScrollSlot {
+  int16_t  offsetPx;      // current pixel offset (0 = start)
+  int16_t  maxOffset;     // total overflow in pixels (0 = text fits, no scroll)
+  uint32_t lastStepMs;    // millis() of last scroll step
+  uint8_t  phase;         // 0=initial pause, 1=scrolling, 2=end pause, 3=reset
+  bool     active;        // needs animation
+};
+
+struct ScrollState {
+  ScrollSlot slots[MAX_SCROLL_SLOTS];
+};
 
 // ─── Application Context ─────────────────────────────────────────────────────
 
@@ -249,8 +296,9 @@ struct AppContext {
   union {
     ShowMetadata       showMeta;
     MovieMetadata      movieMeta;
-    CollectionMetadata collectionMeta;
-    ArtistMetadata     artistMeta;
+    CollectionMetadata         collectionMeta;
+    ArtistMetadata             artistMeta;
+    YouTubePlaylistMetadata    youtubePlaylistMeta;
   } meta1;
 
   union {
@@ -262,8 +310,9 @@ struct AppContext {
   union {
     EpisodeMetadata episodeMeta;
     VideoMetadata   videoMeta;
-    TrackMetadata   trackMeta;
-    PhotoMetadata   photoMeta;
+    TrackMetadata          trackMeta;
+    PhotoMetadata          photoMeta;
+    YouTubeVideoMetadata   youtubeVideoMeta;
   } meta3;
 
   // UI state
@@ -292,6 +341,9 @@ struct AppContext {
 
   // Raw input
   RawInputFlags rawInput;
+
+  // Scrolling text state
+  ScrollState scrollState;
 };
 
 // ─── Magic Constants ────────────────────────────────────────────────────────
@@ -307,6 +359,8 @@ struct AppContext {
 #define TRACK_MAGIC      "TJTK"
 #define PHOTO_ALBUM_MAGIC "TJPA"
 #define PHOTO_MAGIC      "TJPH"
+#define YOUTUBE_PLAYLIST_MAGIC "TJYP"
+#define YOUTUBE_VIDEO_MAGIC    "TJYV"
 
 // ─── Media Type Directory Names on SD Card ──────────────────────────────────
 
@@ -315,6 +369,7 @@ struct AppContext {
 #define MUSIC_VIDEOS_DIR "/MusicVideos"
 #define MUSIC_DIR        "/Music"
 #define PHOTOS_DIR       "/Photos"
+#define YOUTUBE_DIR      "/YouTube"
 
 // ─── UI / Timing Constants ──────────────────────────────────────────────────
 

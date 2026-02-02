@@ -4,7 +4,7 @@
 
 ## Project Structure
 
-- `converter/` - Python package for converting media (TV, movies, music videos, music, photos) into SD card format
+- `converter/` - Python package for converting media (TV, movies, music videos, music, photos, YouTube) into SD card format
 - `firmware/TinyJukebox/` - Arduino firmware for TinyTV 2 hardware (RP2040)
 - `firmware_upstream/` - Original TinyCircuits firmware (reference only)
 
@@ -35,15 +35,17 @@
 - ffmpeg (system binary, for video/audio conversion and frame extraction)
 - requests (metadata fetching from TVMaze/TMDB)
 - mutagen (audio file metadata - ID3, Vorbis, MP4, FLAC tags)
+- yt-dlp (YouTube video/playlist downloading)
 
 ### Converter Modules
 
-- `convert.py` - Main CLI entry point with `--type` routing (tv, movie, music-video, music, photo)
+- `convert.py` - Main CLI entry point with `--type` routing (tv, movie, music-video, music, photo, youtube)
 - `device_packager.py` - TV show packager (TVMaze metadata, season/episode layout)
 - `movie_packager.py` - Movie packager (TMDB metadata, single video)
 - `music_video_packager.py` - Music video collection packager
 - `music_packager.py` - Music packager (audio tags, album art → AVI with looped art + audio)
 - `photo_packager.py` - Photo album packager (resize to 210x135 RGB565)
+- `youtube_packager.py` - YouTube packager (yt-dlp download, convert to AVI)
 - `metadata_fetcher.py` - TVMaze + TMDB API client with caching
 - `binary_writer.py` - All .sdb binary metadata types (write/read)
 - `video_converter.py` - ffmpeg wrapper for video/audio conversion
@@ -83,7 +85,7 @@ The RP2040 needs to be in UF2 bootloader mode to flash. Three steps:
 
 3. **Copy the UF2 file** — the device reboots automatically after copy:
    ```bash
-   cp ~/.cache/arduino/sketches/1E7FA6852524608C517BCB1B47E06FED/TinyJukebox.ino.uf2 /media/mike/RPI-RP2/
+   cp ~/.cache/arduino/sketches/BC6F0F8B6431D7B6F361D4BA98E2EE3C/TinyJukebox.ino.uf2 /media/mike/RPI-RP2/
    ```
 
 Note: `arduino-cli upload -p /dev/ttyACM0` does NOT work for this board in bootloader mode since there's no serial port. Always use the UF2 copy method above.
@@ -106,6 +108,7 @@ Note: `arduino-cli upload -p /dev/ttyACM0` does NOT work for this board in bootl
 - `musicVideoBrowser.ino` - Music video collection/video 2-level browser
 - `musicBrowser.ino` - Music artist/album/track 3-level browser
 - `photoSlideshow.ino` - Photo album browser + timer-based slideshow
+- `youtubeBrowser.ino` - YouTube playlist/video 2-level browser
 - `splashScreen.ino` - "TinyJukebox" branding splash screen
 - `mediaSelector.ino` - Top-level media type chooser
 - `settingsMenu.ino` - Settings screen (slideshow interval, etc.)
@@ -144,6 +147,10 @@ Note: `arduino-cli upload -p /dev/ttyACM0` does NOT work for this board in bootl
   AlbumName/
     album.sdb / album.raw
     P01.raw / P01.sdb
+/YouTube/                        # YouTube Videos
+  PlaylistName/
+    playlist.sdb / playlist.raw
+    Y01.avi / Y01.sdb / Y01.raw
 ```
 
 ### Metadata Formats (.sdb files)
@@ -163,6 +170,8 @@ All follow conventions: 4-byte magic, little-endian, null-padded strings, fixed 
 | T##.sdb | `TJTK` | 64 | trackNumber, title(48), runtimeSeconds |
 | album.sdb (photo) | `TJPA` | 64 | title(48), photoCount |
 | P##.sdb | `TJPH` | 64 | photoNumber, caption(48), dateTaken(8) |
+| playlist.sdb | `TJYP` | 128 | name(48), year(8), uploader(24), videoCount |
+| Y##.sdb | `TJYV` | 128 | videoNumber, title(48), uploader(12), uploadDate(12), runtimeMinutes, description(44) |
 
 ## Scripts
 
@@ -172,6 +181,7 @@ All follow conventions: 4-byte magic, little-endian, null-padded strings, fixed 
   - `./scripts/convert.sh --type music-video --collection "80s Hits" --input ~/mv/80s/`
   - `./scripts/convert.sh --type music --artist "Pink Floyd" --input ~/music/pinkfloyd/`
   - `./scripts/convert.sh --type photo --album "Vacation" --input ~/photos/vacation/`
+  - `./scripts/convert.sh --type youtube --url "https://youtube.com/watch?v=..." --playlist "My Videos"`
 - `scripts/deploy.sh` - Deploy to TinyTV via USB MSC: `./scripts/deploy.sh --skip-convert`
 - `scripts/flash.sh` - Compile + flash firmware: `./scripts/flash.sh [--compile-only] [--upload-only]`
 

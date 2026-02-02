@@ -219,13 +219,11 @@ void drawMusicArtistBrowser() {
     drawText(">", VIDEO_W - 12, thumbY + THUMB_H / 2 - 6, COL_GRAY_MED);
   }
 
-  // Artist name
+  // Artist name (scrolls if too long)
   if (appCtx.metadataLoaded) {
     const char* name = appCtx.meta1.artistMeta.name;
-    int nameW = textWidth(name);
-    int nameX = (VIDEO_W - nameW) / 2;
-    if (nameX < 2) nameX = 2;
-    drawText(name, nameX, 92, COL_YELLOW);
+    drawScrollText(name, 2, 92, VIDEO_W - 4, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Genre + album count
     char infoStr[48];
@@ -244,11 +242,6 @@ void drawMusicArtistBrowser() {
     int nameW = textWidth(dirName);
     drawText(dirName, (VIDEO_W - nameW) / 2, 92, COL_YELLOW);
   }
-
-  // Hint
-  const char* hint = "VOL:nav  CH:select";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 122, COL_GRAY_DK);
 
   // Push to display
   waitForScreenDMA();
@@ -269,19 +262,16 @@ void drawMusicArtistBrowser() {
 void drawMusicAlbumBrowser() {
   clearFrameBuf();
 
-  // Artist name at top
+  // Artist name at top (scrolls if too long)
   if (appCtx.metadataLoaded) {
-    const char* artist = appCtx.meta1.artistMeta.name;
-    int nameW = textWidth(artist);
-    int nameX = (VIDEO_W - nameW) / 2;
-    if (nameX < 2) nameX = 2;
-    drawText(artist, nameX, 8, COL_WHITE);
+    drawScrollText(appCtx.meta1.artistMeta.name, 2, 8, VIDEO_W - 4, COL_WHITE,
+                   &appCtx.scrollState.slots[0]);
   }
 
   // Divider
   drawHLine(10, 24, VIDEO_W - 20, COL_GRAY_DK);
 
-  // Album title - centered
+  // Album title - centered (scrolls if too long)
   char albumStr[32];
   if (appCtx.seasonMetaLoaded) {
     strncpy(albumStr, appCtx.meta2.musicAlbumMeta.title, 24);
@@ -289,17 +279,17 @@ void drawMusicAlbumBrowser() {
   } else {
     snprintf(albumStr, sizeof(albumStr), "Album %d", appCtx.currentSubItem);
   }
-  int albumW = textWidth(albumStr);
-  int albumX = (VIDEO_W - albumW) / 2;
 
   // Navigation arrows
   if (appCtx.subItemNavIndex > 0) {
-    drawText("<", albumX - 16, 48, COL_GRAY_MED);
+    drawText("<", 4, 48, COL_GRAY_MED);
   }
-  drawText(albumStr, albumX, 48, COL_YELLOW);
   if (appCtx.subItemNavIndex < appCtx.meta1.artistMeta.albumCount - 1) {
-    drawText(">", albumX + albumW + 8, 48, COL_GRAY_MED);
+    drawText(">", VIDEO_W - 12, 48, COL_GRAY_MED);
   }
+  // Album title between arrows
+  drawScrollText(albumStr, 16, 48, VIDEO_W - 32, COL_YELLOW,
+                 &appCtx.scrollState.slots[1]);
 
   // "of N"
   char ofStr[16];
@@ -316,11 +306,6 @@ void drawMusicAlbumBrowser() {
     int detailW = textWidth(detailStr);
     drawText(detailStr, (VIDEO_W - detailW) / 2, 86, COL_GRAY_LT);
   }
-
-  // Hint
-  const char* hint = "VOL:nav  CH:select";
-  int hintW = textWidth(hint);
-  drawText(hint, (VIDEO_W - hintW) / 2, 120, COL_GRAY_DK);
 
   // Push to display
   waitForScreenDMA();
@@ -349,23 +334,8 @@ void drawMusicTrackBrowser() {
   // Divider
   drawHLine(2, 16, VIDEO_W - 4, COL_GRAY_DK);
 
-  // Thumbnail (left side)
-  char thumbPath[64];
-  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/A%02d/T%02d.raw",
-           MUSIC_DIR, appCtx.currentItemDir,
-           appCtx.currentSubItem,  // album number stored in currentSubItem context
-           appCtx.currentEpisode); // reusing currentEpisode for track number
-  // Actually we need the album number. Let's use subItemNavIndex+1 as album number
-  // and currentSubItem as track number. But we need to track album separately.
-  // We'll use currentSeason for album number (repurposed for music).
-  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/A%02d/T%02d.raw",
-           MUSIC_DIR, appCtx.currentItemDir,
-           appCtx.currentSeason, appCtx.currentSubItem);
-  if (!displayThumbnail(thumbPath, 2, 19)) {
-    fillRect(2, 19, THUMB_W, THUMB_H, COL_GRAY_DK);
-  }
-
-  // Track info (right side)
+  // Track info (right side) - drawn BEFORE thumbnail so thumbnail
+  // overwrites any scrolling text that bleeds left into the thumbnail area
   int infoX = 114;
 
   // Track number
@@ -374,30 +344,11 @@ void drawMusicTrackBrowser() {
            appCtx.currentSubItem, appCtx.subItemCount);
   drawText(numStr, infoX, 22, COL_WHITE);
 
-  // Track title
+  // Track title (scrolls if too long)
   if (appCtx.episodeMetaLoaded) {
-    char titleBuf[49];
-    strncpy(titleBuf, appCtx.meta3.trackMeta.title, 48);
-    titleBuf[48] = '\0';
-
-    char line1[13], line2[13];
-    memset(line1, 0, sizeof(line1));
-    memset(line2, 0, sizeof(line2));
-
-    if (strlen(titleBuf) <= 12) {
-      strncpy(line1, titleBuf, 12);
-    } else {
-      int breakAt = 12;
-      while (breakAt > 0 && titleBuf[breakAt] != ' ') breakAt--;
-      if (breakAt == 0) breakAt = 12;
-      strncpy(line1, titleBuf, breakAt);
-      strncpy(line2, titleBuf + breakAt + (titleBuf[breakAt] == ' ' ? 1 : 0), 12);
-    }
-
-    drawText(line1, infoX, 38, COL_YELLOW);
-    if (line2[0]) {
-      drawText(line2, infoX, 52, COL_YELLOW);
-    }
+    drawScrollText(appCtx.meta3.trackMeta.title, infoX, 38,
+                   VIDEO_W - infoX - 2, COL_YELLOW,
+                   &appCtx.scrollState.slots[0]);
 
     // Runtime
     if (appCtx.meta3.trackMeta.runtimeSeconds > 0) {
@@ -405,21 +356,28 @@ void drawMusicTrackBrowser() {
       int secs = appCtx.meta3.trackMeta.runtimeSeconds % 60;
       char rtStr[16];
       snprintf(rtStr, sizeof(rtStr), "%d:%02d", mins, secs);
-      drawText(rtStr, infoX, 68, COL_GRAY_LT);
+      drawText(rtStr, infoX, 54, COL_GRAY_LT);
     }
+  }
+
+  // Thumbnail (left side) - drawn AFTER text so it overwrites any
+  // scrolling text bleed into the thumbnail region
+  char thumbPath[64];
+  snprintf(thumbPath, sizeof(thumbPath), "%s/%s/A%02d/T%02d.raw",
+           MUSIC_DIR, appCtx.currentItemDir,
+           appCtx.currentSeason, appCtx.currentSubItem);
+  if (!displayThumbnail(thumbPath, 2, 19)) {
+    fillRect(2, 19, THUMB_W, THUMB_H, COL_GRAY_DK);
   }
 
   // Lower divider
   drawHLine(2, 88, VIDEO_W - 4, COL_GRAY_DK);
 
-  // Hint
-  drawText("CH:play  VOL:nav", 4, 93, COL_GRAY_DK);
-
   // Artist name at bottom
   if (appCtx.metadataLoaded) {
     const char* artist = appCtx.meta1.artistMeta.name;
     int artW = textWidth(artist);
-    drawText(artist, (VIDEO_W - artW) / 2, 108, COL_GRAY_LT);
+    drawText(artist, (VIDEO_W - artW) / 2, 93, COL_GRAY_LT);
   }
 
   // Push to display
@@ -443,6 +401,7 @@ void handleMusicArtistInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadArtistMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawMusicArtistBrowser();
     }
   }
@@ -455,6 +414,7 @@ void handleMusicArtistInput() {
       appCtx.currentItemDir[ITEM_DIR_LEN - 1] = '\0';
       appCtx.metadataLoaded = false;
       loadArtistMetadata();
+      resetScrollState(&appCtx.scrollState);
       drawMusicArtistBrowser();
     }
   }
@@ -507,6 +467,7 @@ void handleMusicAlbumInput() {
       appCtx.currentSeason = appCtx.subItemNavIndex + 1;  // Album number (1-based)
       appCtx.seasonMetaLoaded = false;
       loadMusicAlbumMetadata(appCtx.currentSeason);
+      resetScrollState(&appCtx.scrollState);
       drawMusicAlbumBrowser();
     }
   }
@@ -518,6 +479,7 @@ void handleMusicAlbumInput() {
       appCtx.currentSeason = appCtx.subItemNavIndex + 1;
       appCtx.seasonMetaLoaded = false;
       loadMusicAlbumMetadata(appCtx.currentSeason);
+      resetScrollState(&appCtx.scrollState);
       drawMusicAlbumBrowser();
     }
   }
@@ -568,6 +530,7 @@ void handleMusicTrackInput() {
       appCtx.currentSubItem++;
       appCtx.episodeMetaLoaded = false;
       loadTrackMetadata(appCtx.currentSeason, appCtx.currentSubItem);
+      resetScrollState(&appCtx.scrollState);
       drawMusicTrackBrowser();
     }
   }
@@ -578,6 +541,7 @@ void handleMusicTrackInput() {
       appCtx.currentSubItem--;
       appCtx.episodeMetaLoaded = false;
       loadTrackMetadata(appCtx.currentSeason, appCtx.currentSubItem);
+      resetScrollState(&appCtx.scrollState);
       drawMusicTrackBrowser();
     }
   }
